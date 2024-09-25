@@ -1,5 +1,5 @@
 from pylablib.devices import Thorlabs
-from .derp_conf import (
+from .derpy_conf import (
     FOCUS_STAGE_ID,
     PSG_ROTATION_STAGE_ID,
     PSA_ROTATION_STAGE_ID,

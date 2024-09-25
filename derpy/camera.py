@@ -1,7 +1,7 @@
 import FliSdk_V2 as sdk
 import time
 from astropy.io import fits
-from .derp_conf import (
+from .derpy_conf import (
     np,
     CRED2_CAMERA_INDEX,
     CAMERA_TEMP_READOUT_DELAY
