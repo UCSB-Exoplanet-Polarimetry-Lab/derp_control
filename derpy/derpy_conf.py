@@ -6,6 +6,8 @@ PSG_ROTATION_STAGE_ID = 55346494
 CRED2_CAMERA_INDEX = 0
 CAMERA_TEMP_READOUT_DELAY = 8 # s
 
+VERBOSE = True
+
 
 class BackendShim:
     """A shim that allows a backend to be swapped at runtime.

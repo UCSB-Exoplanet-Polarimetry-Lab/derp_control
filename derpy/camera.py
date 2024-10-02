@@ -4,7 +4,8 @@ from astropy.io import fits
 from .derpy_conf import (
     np,
     CRED2_CAMERA_INDEX,
-    CAMERA_TEMP_READOUT_DELAY
+    CAMERA_TEMP_READOUT_DELAY,
+    VERBOSE
 )
 
 def display_all_temps(context,verbose = True):
@@ -35,12 +36,13 @@ def update_context(context):
 
 class CRED2:
 
-    def __init__(self, set_temperature, fps, tint, conversion_gain='low'):
+    def __init__(self, set_temperature, fps, tint, temp_tolerance=0.5, conversion_gain='low'):
 
         self.context = sdk.Init()
         self.grabbers = sdk.DetectGrabbers(self.context)
         self.temperature_change = []
         self.set_temperature = set_temperature
+        self.bit_depth = 2**14
 
         assert (set_temperature > -55) and (set_temperature < 20), f"{set_temperature}C is not a valid temperature"
         self.set_temp = np.float64(set_temperature)
@@ -71,6 +73,7 @@ class CRED2:
 
         sensor_temp = display_all_temps(self.context)
         
+        # TODO: Include np.isclose() to check if the temperature is within tolerance
         if self.set_temp < initial_temp:
             while sensor_temp > self.set_temp:
                 sensor_temp = display_all_temps(self.context)
@@ -110,31 +113,29 @@ class CRED2:
         return self._tint
     
     @tint.setter
-    def tint(self, value, verbose=False):
+    def tint(self, value):
         """set the integration time of the camera in ms
 
         Parameters
         ----------
         value : float
             integration time in ms
-        verbose : bool, optional
-            whether to print the current and prior tint values, by default False
         """
 
         if sdk.IsCredTwo(self.context) or sdk.IsCredThree(self.context):
             res, response = sdk.FliSerialCamera.SendCommand(self.context, "mintint raw")
-            self.min_tint = float(response)
+            self.min_tint = float(response) * 1000
 
             res, response = sdk.FliSerialCamera.SendCommand(self.context, "maxtint raw")
-            self.max_tint = float(response)
+            self.max_tint = float(response) * 1000
 
             res, response = sdk.FliSerialCamera.SendCommand(self.context, "tint raw")
             tint = response * 1000
-            if verbose:
+            if VERBOSE:
                 print(f"Prior camera tint: {tint}ms")
 
-            mintint = self.min_tint*1000
-            maxtint = self.max_tint*1000
+            mintint = self.min_tint
+            maxtint = self.max_tint
 
             assert (value > mintint) and (value < maxtint), f"tint value {value}ms must be between {mintint} and {maxtint}"
            
@@ -145,8 +146,9 @@ class CRED2:
 
             res, response = sdk.FliCredTwo.GetTint(self.context)
             tint = response * 1000
+            self._tint = tint
 
-            if verbose:
+            if VERBOSE:
                 print(f"Current camera tint: {tint}ms")
 
         else:
