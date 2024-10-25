@@ -199,6 +199,17 @@ class CRED2:
 
         return frame_list
 
+    def take_median_image(self, save_path=None, verbose=False):
+        frame_list = self.take_many_images(1, save_path=save_path, verbose=verbose) 
+        frame_list_median = np.median(frame_list, axis=0)
+
+        if save_path is not None:
+            hdu = fits.PrimaryHDU(frame_list_median)
+            hdul = fits.HDUList([hdu])
+            hdul.writeto(f'{save_path}_median', overwrite=True) # overwrites original, non-median-combined image
+
+        return frame_list_median 
+
     def take_image(self, save_path=None, verbose=False):
 
         frame_list = self.take_many_images(1, save_path=save_path, verbose=verbose)
