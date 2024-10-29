@@ -73,18 +73,17 @@ class CRED2:
 
         sensor_temp = display_all_temps(self.context)
         
-        # TODO: Include np.isclose() to check if the temperature is within tolerance
-        if self.set_temp < initial_temp:
-            while sensor_temp > self.set_temp:
-                sensor_temp = display_all_temps(self.context)
-                self.temperature_change.append(sensor_temp)
-                time.sleep(CAMERA_TEMP_READOUT_DELAY)
 
-        elif self.set_temp > initial_temp:
-            while sensor_temp < self.set_temp:
+        # Use np.isclose() to check if the temperature is within tolerance
+        # Returns True when temp difference <= tol + rtol * initial_temp
+        tol = 1e-3 # absolute tolerance
+        rtol = 0 # relative tolerance
+        if self.set_temp != initial_temp:
+            while not np.isclose(self.set_temp, initial_temp, rtol=rtol, atol=tol):
                 sensor_temp = display_all_temps(self.context)
                 self.temperature_change.append(sensor_temp)
-                time.sleep(CAMERA_TEMP_READOUT_DELAY)
+                time.sleep(CAMERA_TEMP_READOUT_DELAY)           
+
 
         self.sensor_temp = display_all_temps(self.context, verbose=False)
         print(f'Final Sensor Temperature {self.sensor_temp:.2f}C')
