@@ -77,9 +77,9 @@ class CRED2:
         # Use np.isclose() to check if the temperature is within tolerance
         tol = temp_tolerance # absolute tolerance
         rtol = 0 # relative tolerance (optional)
-        # np.isclose() returns True when temperature difference <= tol + rtol * initial_temp
-        if self.set_temp != initial_temp:
-            while not np.isclose(self.set_temp, initial_temp, rtol=rtol, atol=tol):
+
+        if sensor_temp != self.set_temp:
+            while not np.isclose(self.set_temp, sensor_temp, rtol=rtol, atol=tol):
                 sensor_temp = display_all_temps(self.context)
                 self.temperature_change.append(sensor_temp)
                 time.sleep(CAMERA_TEMP_READOUT_DELAY)           
