@@ -59,7 +59,8 @@ class Experiment:
     def __init__(self, cam, psg, psa,
                  psg_pol_angle=0, psg_wvp_angle=0, psg_wvp_ret=np.pi/2,
                  psa_pol_angle=0, psa_wvp_angle=0, psa_wvp_ret=np.pi/2,
-                 dark=None, cxr=200, cyr=387, cxl=200, cyl=195, cut=120):
+                 dark=None, cxr=200, cyr=387, cxl=200, cyl=195, cut=120,
+                 wavelengths=None):
         
         # initialize the hardware
         self.cam = cam
@@ -99,6 +100,9 @@ class Experiment:
         self.cxr = cxr
         self.cyr = cyr
         self.cut = cut
+
+        if wavelengths is not None:
+            self.wavelengths = wavelengths
 
     def measurement(self, psg_angular_step, psa_angular_step, n_steps, n_imgs=5):
 
