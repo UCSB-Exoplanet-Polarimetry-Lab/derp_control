@@ -452,42 +452,73 @@ def measure_from_images(data, psg_angles, psa_angles,
 def mask_bad_data(experiment, frame_mask, wavelength_index, channel):
 
     # update images
-    print(channel)
-    if channel == "left":
-        i = 0
+    if channel == "both":
+        unmasked_images_l = experiment.images[wavelength_index, :, 0]
+        unmasked_images_r = experiment.images[wavelength_index, :, 1]
+        unmasked_images = np.concatenate([unmasked_images_l, unmasked_images_r])
 
-    elif channel == "right":
-        i = 1
-    
-    print("experiment image shape = ",experiment.images.shape)
-    unmasked_images = experiment.images[wavelength_index, :, i]
+        starting_angle_psg_wvp = np.radians(experiment.psg_starting_angle)
+        starting_angle_psa_wvp = np.radians(experiment.psa_starting_angle)
 
-    # Where it currently is
-    starting_angle_psg_wvp = np.radians(experiment.psg_starting_angle)
-    starting_angle_psa_wvp = np.radians(experiment.psa_starting_angle)
-    unmasked_psg_angles = np.radians(np.array(experiment.psg_positions_relative)) + starting_angle_psg_wvp
-    unmasked_psa_angles = np.radians(np.array(experiment.psa_positions_relative)) + starting_angle_psa_wvp
+        unmasked_psg_angles = np.radians(np.array(experiment.psg_positions_relative)) + starting_angle_psg_wvp
+        unmasked_psa_angles = np.radians(np.array(experiment.psa_positions_relative)) + starting_angle_psa_wvp
+
+        unmasked_psg_angles = np.concatenate([unmasked_psg_angles, unmasked_psg_angles])
+        unmasked_psa_angles = np.concatenate([unmasked_psa_angles, unmasked_psa_angles])
+
+        frame_mask = np.concatenate([frame_mask, frame_mask])
+
+        mean_power_left = experiment.mean_power_left[wavelength_index]
+        mean_power_right = experiment.mean_power_right[wavelength_index]
+        mean_power_left = np.concatenate([mean_power_left, mean_power_left])
+        mean_power_right = np.concatenate([mean_power_right, mean_power_right])
+
+    else:
+        if channel == "left":
+            i = 0
+        elif channel == "right":
+            i = 1
+        
+        unmasked_images = experiment.images[wavelength_index, :, i]
+
+        # Where it currently is
+        starting_angle_psg_wvp = np.radians(experiment.psg_starting_angle)
+        starting_angle_psa_wvp = np.radians(experiment.psa_starting_angle)
+        unmasked_psg_angles = np.radians(np.array(experiment.psg_positions_relative)) + starting_angle_psg_wvp
+        unmasked_psa_angles = np.radians(np.array(experiment.psa_positions_relative)) + starting_angle_psa_wvp
+
+        mean_power_left = experiment.mean_power_left[wavelength_index]
+        mean_power_right = experiment.mean_power_right[wavelength_index]
 
     images = []
     psg_angles = []
     psa_angles = []
-
+    good_frame_counter = 0
     for i, (im, dont_mask, psg, psa) in enumerate(zip(unmasked_images, frame_mask , unmasked_psg_angles, unmasked_psa_angles)):
         
         if dont_mask==1:
 
+            # save the first good frame as the reference
+            if good_frame_counter == 0:
+
+                # get the reference power
+                power_ref = mean_power_left[i] + mean_power_right[i]
+
+            # perform the intensity correction
+            p_ref_l = mean_power_left[i] + mean_power_right[i]
+            p_ref = power_ref / p_ref_l
+
+            im_corrected = im * p_ref
+
             psg_angles.append(psg)
             psa_angles.append(psa)
-            images.append(im)
+            images.append(im_corrected)
+
+            good_frame_counter += 1
 
     psg_angles = np.array(psg_angles)
     psa_angles = np.array(psa_angles)
     images = np.array(images)
-    print("post_mask experiment image shape = ",images.shape)
-
-    # experiment.images = images
-    # experiment.psg_positions_relative = psg_angles
-    # experiment.psa_positions_relative = psa_angles
 
     return images, psg_angles, psa_angles
 
@@ -506,6 +537,9 @@ def mueller_from_experiment(experiment, channel="left", frame_mask=None):
 
         if channel == "right":
             pol_angle_a += np.pi/2
+
+        elif channel == "both":
+            pol_angle_a = [pol_angle_a, pol_angle_a + np.pi/2]
         
         ret_angle_g = experiment.psg_wvp_ret
         ret_angle_a = experiment.psa_wvp_ret

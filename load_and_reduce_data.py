@@ -31,9 +31,9 @@ EXPERIMENT_ID = "data/20250206_Pre_GPI_Test/air_test_0_measure_0"
 WVL_ID = 0
 WAVELENGTH_SELECT = 1400  # nm
 
-PLOT_INTERMEDIATE = False
+PLOT_INTERMEDIATE = True
 MASK_RAD = 0.5 # from 0 to 1, 1 being the full circle
-MODE = "left" # "left", "right", "both"
+MODE = "both" # "left", "right", "both"
 BAD_FRAMES_CAL = [10] # -6
 BAD_FRAMES = []
 PLOT_IMAGES = False
@@ -156,18 +156,18 @@ if __name__ == "__main__":
         # plt.show()
 
     exp_calibrated = calibrate_experiment(results_wvl[str(WAVELENGTH_SELECT)].x, exp)
-    M = measure_from_experiment_polychromatic(exp_calibrated, channel='left',
-                                wavelength=WVL_ID, frame_mask=mask_bad_frames)
+    M = mueller_from_experiment(exp_calibrated, channel='left',
+                                frame_mask=mask_bad_frames)
 
     # define a mask to protect us from the big dots
-    mask_data = np.zeros_like(M[:,:,0,0])
+    mask_data = np.zeros_like(M[WVL_ID][:,:,0,0])
     x = np.linspace(-1, 1, mask_data.shape[0])
     x, y = np.meshgrid(x, x)
     r = np.sqrt(x**2 + y**2)
     mask_data[r < MASK_RAD] = 1
 
     if PLOT_INTERMEDIATE:
-        plot_square(M / M[..., 0, 0, None, None], title="Air Calibration",
+        plot_square(M[WVL_ID] / M[WVL_ID][..., 0, 0, None, None], title="Air Calibration",
                     vmin=-1.1, vmax=1.1, scale_offdiagonal=1, mask=mask_data)
 
     # UPDATE with calibrated parameters
@@ -231,7 +231,7 @@ if __name__ == "__main__":
                                         frame_mask=mask_bad_frames)
 
 
-    plot_square(M_measure[0] / M_measure[0][..., 0, 0, None, None],
+    plot_square(M_measure[WVL_ID] / M_measure[WVL_ID][..., 0, 0, None, None],
                 title=f"{MODE} Inversion", vmin=-1.1, vmax=1.1,
                 scale_offdiagonal=1, mask=mask_data)
 
