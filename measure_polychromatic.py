@@ -24,16 +24,18 @@ from derpy.writing import write_experiment
 # --------------------------------
 # 1.1 to 2 microns
 #wavelengths =        [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000]  # Ensure unique wavelengths
-#channel_power_list = [100,  100,  50,   30,   30,   30,   30,   30,   50,   50]
-wavelengths =        [1400, 1500]  # Ensure unique wavelengths
-channel_power_list = [10, 10]
+#channel_power_list = [100,  100,  25,   17,   16,   15,   17,   19,   23,   25]
+wavelengths =        [1150, 1250, 1350, 1450, 1550, 1650, 1750, 1850, 1950]  # Ensure unique wavelengths
+channel_power_list = [100,  37,   17,   16,   16,   17,   18,   22,   24]
+#wavelengths =        [1400, 1500, 1600]  # Ensure unique wavelengths
+#channel_power_list = [17, 16, 15]
 overall_power_list = len(channel_power_list) * [100,] # NOTE: This is not currently used
 N_EXPERIMENTS = 1
 ANGULAR_STEP = 3.6 # deg
 ANGULAR_RATIO = 2.5 # deg
 N_CAL_MEASUREMENTS = 24
 N_MEASUREMENTS = 50
-DATA_PATH = "data/20250206_Pre_GPI_Test/air_test_0_"
+DATA_PATH = "data/20250210_GPI/GPI_HWP_50nm_offset_3_"
 # --------------------------------
 
 # define subaperture centers

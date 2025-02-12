@@ -10,12 +10,13 @@ from scipy.optimize import minimize
 from katsu.mueller import(
     linear_retarder,
     linear_polarizer,
-    retardance_parameters_from_mueller
+    retardance_parameters_from_mueller,
+    retardance_from_mueller
 )
 from derpy import Experiment, forward_calibrate, forward_simulate
 from derpy.data_reduction import (
-    measure_from_experiment,
-    measure_from_experiment_polychromatic,
+    _measure_from_experiment,
+    _measure_from_experiment_polychromatic,
     mueller_from_experiment
 )
 from derpy.writing import read_experiment
@@ -24,18 +25,21 @@ from derpy.writing import read_experiment
 # --------------------------------
 # CALIBRATION_ID = "data/20250205_Pre_GPI_Test/air_test_1_air_calibration"
 # EXPERIMENT_ID = "data/20250205_Pre_GPI_Test/air_test_1_measure_0"
-CALIBRATION_ID = "data/20250206_Pre_GPI_Test/air_test_0_air_calibration"
-EXPERIMENT_ID = "data/20250206_Pre_GPI_Test/air_test_0_measure_0"
+CALIBRATION_ID = "data/20250210_GPI/GPI_HWP_50nm_offset_3_air_calibration"
+EXPERIMENT_ID = "data/20250210_GPI/GPI_HWP_50nm_offset_3_measure_0"
+
+# mask IDs for 02/10 GPI measurements
+# 1550: WVL_ID = 4, BAD_FRAMES = [5, 12, 35], BAD_FRAMES_CAL = [11]
 
 # TODO: Make these not redundant
-WVL_ID = 0
-WAVELENGTH_SELECT = 1400  # nm
+WVL_ID = 4
+WAVELENGTH_SELECT = 1550  # nm
 
 PLOT_INTERMEDIATE = True
 MASK_RAD = 0.5 # from 0 to 1, 1 being the full circle
 MODE = "both" # "left", "right", "both"
-BAD_FRAMES_CAL = [10] # -6
-BAD_FRAMES = []
+BAD_FRAMES_CAL = [11] # [3, 13 -1], _, [8]
+BAD_FRAMES = [5, 12, 35]  # [-9], _, [-11]
 PLOT_IMAGES = False
 # --------------------------------
 
@@ -215,27 +219,46 @@ if __name__ == "__main__":
     results = results_wvl[str(WAVELENGTH_SELECT)]
 
     # Update experiment position
-    print(prior_psg_motion)
-    print(prior_psa_motion)
+    # TODO: THIS WILL BREAK EVERYTHING IF YOU CHANGE ANYTHING IN THE MEASURE_POLYCHROMATIC.PY FILE
+    # prior_psg_motion += 180 * WVL_ID
+    # prior_psa_motion += 450 * WVL_ID
+
+    print("Wavelengths in Experiment: ", measure.wavelengths)
+
     measure.psg_pol_angle = results.x[0]
     measure.psg_starting_angle = np.degrees(results.x[1]) + prior_psg_motion
     measure.psg_wvp_ret = results.x[2]
     measure.psa_pol_angle = results.x[3]
     measure.psa_starting_angle = np.degrees(results.x[4]) + prior_psa_motion
     measure.psa_wvp_ret = results.x[5]
-
-    measure.wavelengths = [WAVELENGTH_SELECT]
-
     
     M_measure = mueller_from_experiment(measure, channel=MODE,
                                         frame_mask=mask_bad_frames)
+    
 
+    #M_measure is a list of length 1, so if if WVL_ID is anythong other than 0 [WVL_ID] returns an IdexError
 
     plot_square(M_measure[WVL_ID] / M_measure[WVL_ID][..., 0, 0, None, None],
-                title=f"{MODE} Inversion", vmin=-1.1, vmax=1.1,
+                title=f"{MODE} Inversion {WAVELENGTH_SELECT} nm", vmin=-1.1, vmax=1.1,
                 scale_offdiagonal=1, mask=mask_data)
+    
+    # plot_square(M_measure[0] / M_measure[0][..., 0, 0, None, None],
+    #             title=f"{MODE} Inversion {WAVELENGTH_SELECT} nm", vmin=-1.1, vmax=1.1,
+    #             scale_offdiagonal=1, mask=mask_data)
+    
+    #I have no idea what i'm doing
+    # square_duim = M_measure[WVL_ID].shape[0]
+    # retardance = np.zeros([square_duim, square_duim])
+    # for i in range(square_duim):
+    #     for j in range(square_duim):
+    #         retardance[i, j] = retardance_parameters_from_mueller(M_measure[WVL_ID][i, j])
+    # retardance = retardance_from_mueller(M_measure[WVL_ID])
 
-    #retardance = retardance_parameters_from_mueller(M_measure)
+    # plt.figure()
+    # plt.title(f"{WAVELENGTH_SELECT}nm Retardance")
+    # plt.imshow(retardance, cmap="RdBu_r")
+    # plt.colorbar()
+    # plt.show()
 
     #plot_square(retardance, title=f"{MODE} Retardance", vmin=-1.1, vmax=1.1, scale_offdiagonal=1, mask=mask_data)
 

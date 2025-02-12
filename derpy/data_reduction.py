@@ -3,7 +3,7 @@ from katsu.katsu_math import broadcast_kron, np
 from katsu.mueller import linear_polarizer, linear_retarder, linear_diattenuator
 
 
-def measure_from_experiment(experiment, channel="both", frame_mask=None,
+def _measure_from_experiment(experiment, channel="both", frame_mask=None,
                             wavelength=None):
     """Measure a Mueller Matrix from an Experiment
 
@@ -258,7 +258,7 @@ def measure_from_experiment(experiment, channel="both", frame_mask=None,
     return M_meas.reshape([*M_meas.shape[:-1], 4, 4])
 
 
-def measure_from_experiment_old(experiment, channel="both", frame_mask=None):
+def _measure_from_experiment_old(experiment, channel="both", frame_mask=None):
 
     # Get the cuts
     cxl = experiment.cxl
@@ -392,7 +392,7 @@ def measure_from_experiment_old(experiment, channel="both", frame_mask=None):
     return M_meas.reshape([*M_meas.shape[:-1], 4, 4])
 
 
-def measure_from_experiment_polychromatic(experiment, channel="both",
+def _measure_from_experiment_polychromatic(experiment, channel="both",
                                           frame_mask=None, wavelength=0):
     
     # in-line replace images
@@ -412,7 +412,6 @@ def measure_from_images(data, psg_angles, psa_angles,
     shapes = [*power.shape[-2:], psa_angles.shape[0]]
     shapes_half = [*power.shape[-2:], psa_angles.shape[0]//2]
     power = np.moveaxis(power,0,-1)
-    print(power.shape)
 
     psg_pol = linear_polarizer(pol_angle_g)
     psg_wvp = linear_retarder(psg_angles, ret_angle_g, shape=shapes)
@@ -534,6 +533,13 @@ def mueller_from_experiment(experiment, channel="left", frame_mask=None):
         
         pol_angle_g = experiment.psg_pol_angle
         pol_angle_a = experiment.psa_pol_angle
+
+        # subtract off the analyzer angle to align polarimeter into the laboratory frame
+        # NOTE: This assumes that the left channel analyzes the horizontal
+        pol_angle_g -= pol_angle_a
+        psg_angles -= pol_angle_a
+        psa_angles -= pol_angle_a
+        pol_angle_a -= pol_angle_a
 
         if channel == "right":
             pol_angle_a += np.pi/2
