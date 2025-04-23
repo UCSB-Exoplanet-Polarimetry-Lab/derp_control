@@ -130,8 +130,8 @@ class CRED2:
 
             res, response = sdk.FliSerialCamera.SendCommand(self.context, "tint raw")
             tint = response * 1000
-            if VERBOSE:
-                print(f"Prior camera tint: {tint}ms")
+            #if VERBOSE:
+                #print(f"Prior camera tint: {tint}ms")
 
             mintint = self.min_tint
             maxtint = self.max_tint

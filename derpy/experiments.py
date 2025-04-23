@@ -56,7 +56,7 @@ def autofocus_stage(camera, linear_stage, dark=None,
 
 class Experiment:
 
-    def __init__(self, cam, psg, psa,
+    def __init__(self, cam, psg, psa, laser,
                  psg_pol_angle=0, psg_wvp_angle=0, psg_wvp_ret=np.pi/2,
                  psa_pol_angle=0, psa_wvp_angle=0, psa_wvp_ret=np.pi/2,
                  dark=None, cxr=200, cyr=387, cxl=200, cyl=195, cut=120,
@@ -66,6 +66,7 @@ class Experiment:
         self.cam = cam
         self.psg = psg
         self.psa = psa
+        self.laser = laser
 
         # initialize the parameters to calibrate
         self.psg_pol_angle = psg_pol_angle
@@ -78,11 +79,6 @@ class Experiment:
         self.psg_starting_angle = psg_wvp_angle # where the waveplate started
         self.psa_positions_relative = [] # the position history
         self.psa_starting_angle = psa_wvp_angle # where the waveplate started
-
-        # track the image acquisition history
-        self.images = []
-        self.mean_power_left = []
-        self.mean_power_right = []
 
         if dark is not None:
             self.dark = dark
@@ -104,7 +100,7 @@ class Experiment:
         if wavelengths is not None:
             self.wavelengths = wavelengths
 
-    def measurement(self, psg_angular_step, psa_angular_step, n_steps, n_imgs=5):
+    def measurement(self, psg_angular_step, psa_angular_step, n_steps, n_imgs=5, channel=1, power=100):
 
         # grab cuts
         cxl = self.cxl
@@ -112,6 +108,20 @@ class Experiment:
         cxr = self.cxr
         cyr = self.cyr
         cut = self.cut
+
+        # set up wavelength data cube
+        # NOTE: has dimensions NWVL X NSTEPS X 2 X NPIX x NPIX
+        if hasattr(self, 'wavelengths'):
+            self.images = np.zeros([len(self.wavelengths), n_steps, 2, 2*cut, 2*cut])
+            self.mean_power_left = np.zeros([len(self.wavelengths), n_steps])
+            self.mean_power_right = np.zeros([len(self.wavelengths), n_steps])
+        
+        else:
+            self.images = []
+            
+            # track the image acquisition history
+            self.mean_power_left = []
+            self.mean_power_right = []
 
         for i in tqdm(range(n_steps)):
 
@@ -126,18 +136,42 @@ class Experiment:
             sleep(0.1)
 
             # take a measurement
-            img = self.cam.take_median_image(n_imgs)
-            if hasattr(self, 'dark'):
-                img -= self.dark
-                img[img < 0] = 1e-10
+            if hasattr(self, 'wavelengths'):
 
-            # capture the full frame, no sub-pupiling
-            self.images.append(img)
+                for j, wvl in enumerate(self.wavelengths):
+                    
+                    if np.asarray(power).shape[0] > 1:
+                        self.laser.set_channel(channel, wvl, power[j])
+                        
+                    else:
+                        self.laser.set_channel(channel, wvl, power)
+                    
+                    img = self.cam.take_median_image(n_imgs)
+                    if hasattr(self, 'dark'):
+                        img -= self.dark
+                        img[img < 0] = 1e-10
 
-            # Get the average power in the sub-pupils
-            self.mean_power_left.append(np.mean(img[cxl-cut:cxl+cut, cyl-cut:cyl+cut][self.mask==1]))
-            self.mean_power_right.append(np.mean(img[cxr-cut:cxr+cut, cyr-cut:cyr+cut][self.mask==1]))
-            
+                    # Save left pupil, then right pupil
+                    self.images[j, i, 0] = img[cxl-cut:cxl+cut, cyl-cut:cyl+cut]
+                    self.images[j, i, 1] = img[cxr-cut:cxr+cut, cyr-cut:cyr+cut]
+
+                    # save chromatic mean power
+                    self.mean_power_left[j, i] = np.median(img[cxl-cut:cxl+cut, cyl-cut:cyl+cut][self.mask==1])
+                    self.mean_power_right[j, i] = np.median(img[cxr-cut:cxr+cut, cyr-cut:cyr+cut][self.mask==1])
+            else:
+                img = self.cam.take_median_image(n_imgs)
+                if hasattr(self, 'dark'):
+                    img -= self.dark
+                    img[img < 0] = 1e-10
+
+                # capture the full frame, no sub-pupiling
+                self.images.append(img)
+
+                # Get the average power in the sub-pupils
+                # NOTE: This computes the average over the last wavelength
+                self.mean_power_left.append(np.median(img[cxl-cut:cxl+cut, cyl-cut:cyl+cut][self.mask==1]))
+                self.mean_power_right.append(np.median(img[cxr-cut:cxr+cut, cyr-cut:cyr+cut][self.mask==1]))
+                
     
     @property
     def psg_wvp_angle(self):
@@ -185,7 +219,7 @@ def forward_simulate(x, experiment, channel="left"):
     return power_simulated
 
 
-def forward_calibrate(x, experiment, channel="left"):
+def forward_calibrate(x, experiment, channel="left", wavelength=None, mask=None):
 
     if channel == "left":
         power = experiment.mean_power_left
@@ -195,6 +229,9 @@ def forward_calibrate(x, experiment, channel="left"):
 
     else:
         raise ValueError(f"channel '{channel}' must be either 'left' or 'right'")
+    
+    if wavelength is not None:
+        power = power[wavelength]
 
     power_simulated = forward_simulate(x, experiment, channel=channel)
 
@@ -203,7 +240,10 @@ def forward_calibrate(x, experiment, channel="left"):
     power = power / np.max(power)
 
     # compute error to calibrate
-    error = np.sum((power - power_simulated)**2)
+    if mask is not None:
+        error = np.sum((power[mask] - power_simulated[mask])**2)
+    else:
+        error = np.sum((power - power_simulated)**2)
 
     return error
 

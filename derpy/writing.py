@@ -79,6 +79,7 @@ def write_experiment(experiment, filename):
     experiment.cam = None
     experiment.psa = None
     experiment.psg = None
+    experiment.laser = None
 
     serdata = serialize(experiment)
 
