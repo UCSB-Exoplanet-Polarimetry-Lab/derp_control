@@ -3,6 +3,7 @@ import msgpack
 import msgpack_numpy as m
 from astropy.io import fits
 from astropy.table import Table
+import configobj
 from .experiments import Experiment
 
 """taken from poke.writing with permission from author Jaren Ashcraft"""
@@ -110,6 +111,18 @@ def read_experiment(filename):
 
 # fits reading / writing
 def save_experiment_data(experiment, filename, overwrite=True):
+    """Save experiment data to a FITS file
+
+    Parameters
+    ----------
+    experiment : derpy.Experiment object
+        Object containing the experiment data
+    filename : str
+        File to save the data to
+    overwrite : bool, optional
+        Whether to overwrite the previous file if it already exits, 
+        by default True
+    """
 
     # This will give us a data cube containing the images, angles, and calibrated parameters
     hdu_new = fits.PrimaryHDU(experiment.images)
@@ -153,3 +166,22 @@ def save_experiment_data(experiment, filename, overwrite=True):
     hdu_mask.writeto(filename + "_mask.fits", overwrite=True)
     angle_table.writeto(filename + "_angles.fits", overwrite=True)
 
+def save_calibrated_parameters(experiment, filename):
+    """Save calibrated parameters to a .ini file
+
+    Parameters
+    ----------
+    experiment : derpy.Experiment
+        Experiment object containing the calibrated parameters
+    filename : str
+        Filename to save the parameters to
+    """
+    config = configobj.ConfigObj()
+    config["calibrated"] = {}
+    config["calibrated"]["psg_pol_angle"] = experiment.psg_pol_angle
+    config["calibrated"]["psg_wvp_angle"] = experiment.psg_wvp_angle
+    config["calibrated"]["psg_wvp_ret"] = experiment.psg_wvp_ret
+    config["calibrated"]["psa_pol_angle"] = experiment.psa_pol_angle
+    config["calibrated"]["psa_wvp_angle"] = experiment.psa_wvp_angle
+    config["calibrated"]["psa_wvp_ret"] = experiment.psa_wvp_ret
+    config.write(open(filename + ".ini", "w"))
