@@ -1,4 +1,3 @@
-import FliSdk_V2 as sdk
 import time
 from astropy.io import fits
 from .derpy_conf import (
@@ -7,6 +6,13 @@ from .derpy_conf import (
     CAMERA_TEMP_READOUT_DELAY,
     VERBOSE
 )
+from warnings import warn
+
+try:
+    import FliSdk_V2 as sdk
+except ImportError:
+    warn("Module FliSdk_V2 not found. Will not be able to execute camera.CRED2")
+
 
 def display_all_temps(context,verbose = True):
     res, mb, fe, pw, sensor, peltier, heatsink = sdk.FliCredTwo.GetAllTemp(context)
