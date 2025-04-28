@@ -31,7 +31,8 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["derpy/"]
+where = ["."]
+include = ["derpy"]
 
 [tool.pytest.ini_options]
 pythonpath = [
