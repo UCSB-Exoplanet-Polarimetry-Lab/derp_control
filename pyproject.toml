@@ -17,7 +17,9 @@ authors = [
 ]
 
 keywords = ["mueller", "polarimetry", "data reduction", "hardware"]
-dependencies = ["numpy", "scipy", "pylablib", "tqdm", "katsu", "configobj"]
+dependencies = ["numpy", "scipy", "pylablib", "tqdm",
+				"katsu", "configobj", "msgpack", "msgpack_numpy",
+				"astropy"]
 
 classifiers = [
     "Programming Language :: Python :: 3",
