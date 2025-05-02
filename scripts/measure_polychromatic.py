@@ -25,8 +25,10 @@ from derpy.writing import write_experiment
 # 1.1 to 2 microns
 #wavelengths =        [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000]  # Ensure unique wavelengths
 #channel_power_list = [100,  100,  25,   17,   16,   15,   17,   19,   23,   25]
-wavelengths =        [1150, 1250, 1350, 1450, 1550, 1650, 1750, 1850, 1950]  # Ensure unique wavelengths
-channel_power_list = [100,  37,   17,   16,   16,   17,   18,   22,   24]
+# wavelengths =        [1150, 1250, 1350, 1450, 1550, 1650, 1750, 1850, 1950]  # Ensure unique wavelengths
+# channel_power_list = [100,  37,   17,   16,   16,   17,   18,   22,   24]
+wavelengths =        [1150, 1250, 1350]  # Ensure unique wavelengths
+channel_power_list = [100,  37,   17]
 #wavelengths =        [1400, 1500, 1600]  # Ensure unique wavelengths
 #channel_power_list = [17, 16, 15]
 overall_power_list = len(channel_power_list) * [100,] # NOTE: This is not currently used
@@ -35,13 +37,13 @@ ANGULAR_STEP = 3.6 # deg
 ANGULAR_RATIO = 2.5 # deg
 N_CAL_MEASUREMENTS = 24
 N_MEASUREMENTS = 50
-DATA_PATH = "data/20250210_GPI/GPI_HWP_50nm_offset_3_"
+DATA_PATH = "../data/20250502_JBand_Vortex/Beamco_VVC"
 # --------------------------------
 
 # define subaperture centers
-cxr, cyr = 249, 326 # pixel index
-cxl, cyl = 250, 135 # pixel index
-cut = 80 # crop radius
+cxr, cyr = 235, 295 # pixel index
+cxl, cyl = 235, 105 # pixel index
+cut = 75 # crop radius
 
 def calibrate_experiment(x, experiment):
 
@@ -107,11 +109,6 @@ if __name__ == "__main__":
     bright = cam.take_many_images(10)
     bright_avg = np.median(bright, axis=0) - dark
     bright_avg[bright_avg < 0] = 0
-
-    # define subaperture centers
-    cxr, cyr = 250, 320 # pixel index
-    cxl, cyl = 250, 120 # pixel index
-    cut = 100 # crop radius
 
     # defined mask
     x = np.linspace(-1, 1, 2*cut)

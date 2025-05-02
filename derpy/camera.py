@@ -6,6 +6,13 @@ from .derpy_conf import (
     CAMERA_TEMP_READOUT_DELAY,
     VERBOSE
 )
+from warnings import warn
+
+try:
+    import FliSdk_V2 as sdk
+except ImportError:
+    warn("FliSdk_V2 not found. Make sure the SDK is installed and in your PYTHONPATH.")
+
 
 
 def display_all_temps(context,verbose = True):

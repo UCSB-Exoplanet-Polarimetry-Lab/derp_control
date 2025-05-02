@@ -5,6 +5,11 @@ from .derpy_conf import (
     np
 )
 
+try:
+    from pylablib.devices import Thorlabs
+except ImportError:
+    raise ImportError("pylablib not found. Make sure the library is installed and in your PYTHONPATH.")
+
 def print_connected_devices():
     print(Thorlabs.list_kinesis_devices())
 
