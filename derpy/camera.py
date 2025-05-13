@@ -251,7 +251,7 @@ class CRED2:
 
     def take_image(self, save_path=None, verbose=False, OPM = None):
 
-        frame_list = self.take_many_images(1, save_path=save_path, verbose=verbose, OPM = OPM)
+        frame_list, power_list = self.take_many_images(1, save_path=save_path, verbose=verbose, OPM = OPM)
         return frame_list
 
     def close(self):
