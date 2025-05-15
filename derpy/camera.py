@@ -35,6 +35,8 @@ def update_context(context):
 
 
 class CRED2:
+ 
+
 
     def __init__(self, set_temperature, fps, tint, temp_tolerance=0.5, conversion_gain='low'):
 
@@ -161,8 +163,41 @@ class CRED2:
     def conversion_gain(self, value):
         self._conversion_gain = value
         res = sdk.FliCredTwo.SetConversionGain(self.context, value)
+    def generate_dummy_photodiode(size):
+        """
+        Generate a 1D dummy photodiode array to simulate photodiode output.
+        
+        Parameters
+        ----------
+        size : int
+            Size of the array. 
 
-    def take_many_images(self, num_images, save_path=None, verbose=False):
+        Returns
+        -------
+        np.ndarray
+            Dummy photodiode array of shape (size,).
+    
+        """
+        return np.random.rand(size)
+
+    def generate_dummy_image(size=256):
+        """
+        
+        Generate a dummy square array to simulate camera output.
+        
+        Parameters
+        ----------
+        size : int
+            Size of the square array. Default is 256.
+            
+        Returns
+        -------
+        np.ndarray
+            Dummy image array of shape (size, size).
+        """
+        return np.random.rand(size,size)
+    
+    def take_many_images(self, num_images, save_path=None, verbose=False, mode='real'):
         """take many images and save them to a directory
 
         Parameters
@@ -173,15 +208,26 @@ class CRED2:
             path to save the images, if None, images are not saved
         verbose : bool, optional
             whether to print the current image number, by default False
+        mode : str, optional
+            whether to use real camera output
+            or a dummy array for testing 'real' or 'dummy', by default 'real'
         """
-        sdk.Update(self.context)
-        sdk.Start(self.context)
+        if mode == 'real':
+         sdk.Update(self.context)
+         sdk.Start(self.context)
 
         frame_list = []
 
         for i in range(num_images):
-            frame = sdk.GetRawImageAsNumpyArray(self.context, 0).astype(np.float64)
-            frame_list.append(frame)
+            if mode == 'real':
+                # Original camera output
+             frame = sdk.GetRawImageAsNumpyArray(self.context, 0).astype(np.float64)
+            elif mode == 'dummy':
+                # Dummy camera output
+                self.generate_dummy_image()
+                frame_list.append(frame)
+        if mode == 'dummy':
+            power_list = self.generate_dummy_photodiode(num_images)
 
             if verbose:
                 print(f"Image {i} taken")
@@ -192,9 +238,19 @@ class CRED2:
         frame_list = np.array(frame_list)
 
         if save_path is not None:
-            hdu = fits.PrimaryHDU(frame_list)
-            hdul = fits.HDUList([hdu])
+            # Save the images to a FITS file
+            primary_hdu = fits.PrimaryHDU(data=frame_list)
+            # Binary table HDU for photodiode data
+            # Note - column name can't exceed 8 characters, abbreviation is clunky feel
+            # free to change this if you want
+            col = fits.Column(name='PHOTOD', format='E', array=power_list)
+            photodiode_hdu = fits.BinTableHDU.from_columns([col])
+            photodiode_hdu.header['EXTNAME'] = 'PHOTODIODE_DATA'
+            # Create the HDU list and write to file
+            hdul = fits.HDUList([primary_hdu, photodiode_hdu])
             hdul.writeto(save_path, overwrite=True)
+            # Note-new module required to make Binary table HDU
+            # Now must import Table from astropy.table
 
         return frame_list
 
