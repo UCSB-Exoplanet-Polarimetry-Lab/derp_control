@@ -194,7 +194,7 @@ class CRED2:
             power_list = None
 
         for i in range(num_images):
-            frame = sdk.GetRawImageAsNumpyArray(self.context, 0).astype(np.float64)
+            frame = sdk.GetRawImageAsNumpyArray(self.context, i).astype(np.float64) # change 0 back to i 
             frame_list.append(frame)
 
             if OPM != None:
