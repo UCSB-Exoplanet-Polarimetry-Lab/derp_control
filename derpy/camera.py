@@ -1,6 +1,8 @@
 import FliSdk_V2 as sdk
 import time
+import os
 from astropy.io import fits
+from astropy.table import Table
 from .derpy_conf import (
     np,
     CRED2_CAMERA_INDEX,
@@ -163,41 +165,11 @@ class CRED2:
     def conversion_gain(self, value):
         self._conversion_gain = value
         res = sdk.FliCredTwo.SetConversionGain(self.context, value)
-    def generate_dummy_photodiode(size):
-        """
-        Generate a 1D dummy photodiode array to simulate photodiode output.
-        
-        Parameters
-        ----------
-        size : int
-            Size of the array. 
+ 
 
-        Returns
-        -------
-        np.ndarray
-            Dummy photodiode array of shape (size,).
-    
-        """
-        return np.random.rand(size)
 
-    def generate_dummy_image(size=256):
-        """
-        
-        Generate a dummy square array to simulate camera output.
-        
-        Parameters
-        ----------
-        size : int
-            Size of the square array. Default is 256.
-            
-        Returns
-        -------
-        np.ndarray
-            Dummy image array of shape (size, size).
-        """
-        return np.random.rand(size,size)
     
-    def take_many_images(self, num_images, save_path=None, verbose=False, mode='real'):
+    def take_many_images(self, num_images, save_path=None, filename=None, verbose=False,OPM=None):
         """take many images and save them to a directory
 
         Parameters
@@ -206,28 +178,32 @@ class CRED2:
             number of images to take
         save_path : str
             path to save the images, if None, images are not saved
+        filename : str
+            name of the file to save the images, if None, images saved as 'camera_output.fits'
         verbose : bool, optional
             whether to print the current image number, by default False
         mode : str, optional
             whether to use real camera output
             or a dummy array for testing 'real' or 'dummy', by default 'real'
         """
-        if mode == 'real':
-         sdk.Update(self.context)
-         sdk.Start(self.context)
+        
+        sdk.Update(self.context)
+        sdk.Start(self.context)
 
         frame_list = []
 
+        if OPM != None:
+            power_list = []
+        elif OPM == None:
+            power_list = None
+
         for i in range(num_images):
-            if mode == 'real':
-                # Original camera output
-             frame = sdk.GetRawImageAsNumpyArray(self.context, 0).astype(np.float64)
-            elif mode == 'dummy':
-                # Dummy camera output
-                self.generate_dummy_image()
-                frame_list.append(frame)
-        if mode == 'dummy':
-            power_list = self.generate_dummy_photodiode(num_images)
+            frame = sdk.GetRawImageAsNumpyArray(self.context, 0).astype(np.float64)
+            frame_list.append(frame)
+      
+            if OPM != None:
+                power = OPM.get_reading()
+                power_list.append(power)
 
             if verbose:
                 print(f"Image {i} taken")
@@ -236,8 +212,23 @@ class CRED2:
             time.sleep(10 * self.tint / 1e3)
 
         frame_list = np.array(frame_list)
+        power_list = np.array(power_list)
 
         if save_path is not None:
+            # Check if the directory exists, if not raise error
+            if not os.path.exists(save_path):
+                raise FileNotFoundError(f"Directory {save_path} does not exist.")
+            # Check if the file name is provided, if not use default
+            if filename is None:
+                filename = 'camera_output.fits'
+            # Check if the file name already exists, if so raise error
+            if os.path.exists(os.path.join(save_path, filename)):
+                raise FileExistsError(f"File {filename} already exists in {save_path}.")
+            # Check if the file name is a valid FITS file
+            if not filename.endswith('.fits'):
+                raise ValueError(f"File name {filename} is not a valid FITS file.")
+            # If user provided filename, add it to the save path
+            save_path = os.path.join(save_path, filename)
             # Save the images to a FITS file
             primary_hdu = fits.PrimaryHDU(data=frame_list)
             # Binary table HDU for photodiode data
@@ -249,9 +240,8 @@ class CRED2:
             # Create the HDU list and write to file
             hdul = fits.HDUList([primary_hdu, photodiode_hdu])
             hdul.writeto(save_path, overwrite=True)
-            # Note-new module required to make Binary table HDU
+            # Note-new module required to make Binary table HDU 
             # Now must import Table from astropy.table
-
         return frame_list
 
     def take_median_image(self, n_frames, save_path=None, verbose=False):
