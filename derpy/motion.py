@@ -10,11 +10,39 @@ try:
 except ImportError:
     raise ImportError("pylablib not found. Make sure the library is installed and in your PYTHONPATH.")
 
+try:
+    from zaber_motion import Units
+    from zaber_motion.ascii import Connection
+except ImportError:
+    raise ImportError("zaber_motion not found. Make sure the library is installed and in your PYTHONPATH")
+
+
 def print_connected_devices():
     print(Thorlabs.list_kinesis_devices())
+    print(Connection.detect_devices())
+
+class BaseZaberStage:
+
+    def __init__(self, COM, device):
+        assert isinstance(COM, str)
+        assert isinstance(device, int)
+
+        self.connection = Connection.open_serial_port(COM)
+        device_list = self.connection.detect_devices()
+        self.device = device_list[device]
+
+        self.axis = self.device.get_axis(1)
+        if not self.axis.is_homed():
+            self.axis.home()
+
+    def step(self, angle_degrees):
+        self.axis.move_relative(angle_degrees, Units.ANGLE_DEGREES)
+
+    def close(self):
+        self.connection.close()
 
 
-class BaseStage:
+class BaseKinesisStage:
 
     def __init__(self, ID):
         """A base class for all stages that utilize pylablib. Goal
@@ -72,21 +100,21 @@ class BaseStage:
         self.device.close()
 
 
-class FocusStage(BaseStage):
+class FocusStage(BaseKinesisStage):
 
     def __init__(self):
         super().__init__(FOCUS_STAGE_ID)
         self.device = Thorlabs.KinesisMotor(self.ID, is_rack_system=True)
 
 
-class PSGRotationStage(BaseStage):
+class PSGRotationStage(BaseKinesisStage):
 
     def __init__(self):
         super().__init__(PSG_ROTATION_STAGE_ID)
         self.device = Thorlabs.KinesisMotor(self.ID, scale='stage')
 
 
-class PSARotationStage(BaseStage):
+class PSARotationStage(BaseKinesisStage):
     
     def __init__(self):
         super().__init__(PSA_ROTATION_STAGE_ID)
