@@ -21,13 +21,23 @@ def print_connected_devices():
     print(Thorlabs.list_kinesis_devices())
     print(Connection.detect_devices())
 
+class ZaberConnection:
+    def __init__(self, COM):
+        assert isinstance(COM, str)
+        self.connection = Connection.open_serial_port(COM)
+
+    def detect_devices(self):
+        return self.connection.detect_devices()
+
+    def close(self):
+        return self.connection.close()
+
 class BaseZaberStage:
 
-    def __init__(self, COM, device):
-        assert isinstance(COM, str)
+    def __init__(self, connection, device):
         assert isinstance(device, int)
 
-        self.connection = Connection.open_serial_port(COM)
+        self.connection = connection
         device_list = self.connection.detect_devices()
         self.device = device_list[device]
 
