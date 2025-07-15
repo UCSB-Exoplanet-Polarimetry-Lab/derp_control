@@ -51,6 +51,12 @@ class BaseZaberStage:
     def close(self):
         self.connection.close()
 
+    def home(self):
+        self.axis.home()
+
+    def get_current_position(self):
+        current_pos_deg = self.axis.get_position(unit=Units.ANGLE_DEGREES)
+        return current_pos_deg
 
 class BaseKinesisStage:
 
@@ -117,14 +123,14 @@ class FocusStage(BaseKinesisStage):
         self.device = Thorlabs.KinesisMotor(self.ID, is_rack_system=True)
 
 
-class PSGRotationStage(BaseKinesisStage):
+class PSGKinesisRotationStage(BaseKinesisStage):
 
     def __init__(self):
         super().__init__(PSG_ROTATION_STAGE_ID)
         self.device = Thorlabs.KinesisMotor(self.ID, scale='stage')
 
 
-class PSARotationStage(BaseKinesisStage):
+class PSAKinesisRotationStage(BaseKinesisStage):
     
     def __init__(self):
         super().__init__(PSA_ROTATION_STAGE_ID)

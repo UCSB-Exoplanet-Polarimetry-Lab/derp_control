@@ -4,14 +4,17 @@ from .derpy_conf import (
     np,
     CRED2_CAMERA_INDEX,
     CAMERA_TEMP_READOUT_DELAY,
-    VERBOSE
+    VERBOSE,
+    FLI_SDK_PTH
 )
 from warnings import warn
+import sys
 
 try:
+    sys.path.append(FLI_SDK_PTH)
     import FliSdk_V2 as sdk
 except ImportError:
-    warn("FliSdk_V2 not found. Make sure the SDK is installed and in your PYTHONPATH.")
+    warn(f"FliSdk_V2 not found at {FLI_SDK_PTH}. \n Make sure the SDK is installed and in your PYTHONPATH.")
 
 
 
