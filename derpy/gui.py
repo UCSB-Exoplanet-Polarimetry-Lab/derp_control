@@ -81,12 +81,12 @@ class ImageSquareSelector:
         """Load image from numpy array and display it"""
         try:
             # Ensure the array is in the correct format
-            if self.image_array.dtype != np.uint8:
+            if self.image_array.dtype != np.uint16:
                 # Normalize if needed
                 if self.image_array.max() <= 1.0:
-                    self.image_array = (self.image_array * 255).astype(np.uint8)
+                    self.image_array = (self.image_array * 255).astype(np.uint16)
                 else:
-                    self.image_array = self.image_array.astype(np.uint8)
+                    self.image_array = self.image_array.astype(np.uint16)
 
             # Handle different array shapes
             if len(self.image_array.shape) == 2:
