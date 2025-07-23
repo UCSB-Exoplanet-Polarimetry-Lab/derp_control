@@ -1,7 +1,12 @@
 from astropy.io import fits
 from katsu.katsu_math import broadcast_kron, np
 from katsu.mueller import linear_polarizer, linear_retarder, linear_diattenuator
+from skimage.registration import phase_cross_correlation
+from scipy.ndimage import center_of_mass, shift
 
+from .gui import launch_image_selector
+from .centering import robust_circle_fit
+from .binning import bin_array_2d
 
 def _measure_from_experiment(experiment, channel="both", frame_mask=None,
                             wavelength=None):
@@ -668,7 +673,97 @@ def q_continuum_from_experiment(experiment, channel="dual"):
 
 
 # Inherits from github.com/Jashcraf/Spatial_Calibration
-def load_fits_data(measurement_pth, calibration_pth, dark_pth=None, use_encoder=False):
+def reduce_data(data, centering='circle', mask=None):
+    """ Reduces the data by compensating for source fluctuations and aligning images
+    using phase cross-correlation.
+
+    Parameters
+    ----------
+    data : dict
+        A dictionary containing the following
+        keys:
+        - "images": numpy array of images.
+        - "angles": numpy array of angles corresponding to the images.
+        - "powers_left": numpy array of mean powers in the left channel.
+        - "powers_right": numpy array of mean powers in the right channel.
+        - "powers_total": numpy array of total mean powers (left + right).
+        - "reference_channel": index of the reference channel (0 for left, 1 for right).
+        - "other_channel": index of the other channel (1 for left, 0 for right).
+    centering : str, optional
+        Method to use for centering the beam. Either 'circle' or 'com' are supported.
+    mask : ndarray, optional
+        NaN mask to apply to all images at the end of the reduction.
+
+    Returns
+    -------
+    images : ndarray
+        A numpy array of images after compensation for source fluctuations and alignment.
+    """
+
+    assert centering in ['circle', 'com'], "centering must be either 'circle' or 'com'"
+
+    if "angles" in data.keys():
+        angles = data["angles"]
+    else:
+        angles = data["psg_angles"]
+
+    images = data["images"]
+    powers_left = data["powers_left"]
+    powers_right = data["powers_right"]
+    powers_total = data["powers_total"]
+    reference_channel = data["reference_channel"]
+    other_channel = data["other_channel"]
+
+
+    # Phase cross-correlation to align the images
+    for i, img in enumerate(images):
+
+        # choose the first left or right frame to align to
+        if i == 0:
+            ref_image = images[i, reference_channel]
+
+            if centering == 'circle':
+                # Center the reference image using circle fitting
+                ref_image, shift_px, circle_params = robust_circle_fit(ref_image)
+
+            elif centering == 'com':
+                # Center the reference image using center of mass
+                ref_image = center_beam(ref_image)
+                circle_params = 0
+
+        # have to do for the left and right channels separately
+        for channel in range(2):
+
+            # Calculate the shift between the current image and the reference image
+            shift_y, shift_x = phase_cross_correlation(ref_image,
+                                                       images[i, channel],
+                                                       upsample_factor=10)[0]
+
+            # Apply the shift to the current image
+            images[i, channel] = shift(images[i, channel], shift=(shift_y, shift_x), mode='wrap')
+
+    # Perform power normalization now that frames are co-registered
+    for i, img in enumerate(images):
+
+        p_ref = img[0] + img[1]  # total power in the frame
+        zero_mask = np.ones_like(p_ref, dtype=bool)
+        zero_mask[p_ref <= 1e-5] = False
+
+        # Apply the mask to the image
+        if mask is not None:
+            img = img * mask
+
+        # 0.5 comes from polarizer transmission
+        set = img / p_ref * 0.5
+        images[i, 0] = set[0] # [zero_mask]
+        images[i, 1] = set[1] # [zero_mask]
+
+    # returns centered images
+    return images, circle_params
+
+
+def load_fits_data(measurement_pth, calibration_pth,
+                   dark_pth=None, use_encoder=False, reference_channel="Left"):
     """load data from .fits file experiments
 
     Parameters
@@ -698,6 +793,24 @@ def load_fits_data(measurement_pth, calibration_pth, dark_pth=None, use_encoder=
     if dark_pth is not None:
         raise ValueError("Optional dark subtraction not yet implemented")
 
+    if isinstance(reference_channel, str):
+        assert reference_channel.lower() in ["left", "right"]
+        if reference_channel.lower() == "left":
+            reference_channel = 0
+            other_channel = 1
+        else:
+            reference_channel = 1
+            other_channel = 0
+
+    elif isinstance(reference_channel, int):
+        assert reference_channel in [0, 1]
+        if reference_channel == 0:
+            other_channel = 1
+        else:
+            other_channel = 0
+    else:
+        raise ValueError(f"Channel {reference_channel} is not in 'Left'/'Right' or 0/1")
+
     drrp_raw_data = {}
     pths = [calibration_pth, measurement_pth]
     experiment_keys = ["Calibration", "Measurement"]
@@ -706,7 +819,26 @@ def load_fits_data(measurement_pth, calibration_pth, dark_pth=None, use_encoder=
 
         # Load the data
         measurement = fits.open(measurement_pth)
-        power_measurement = measurement["PSG_IMAGES"]
+        power_measurement = measurement["PSG_IMAGES"].data
+
+        # Subaperture based on the Calibration file
+        if key == "Calibration":
+
+            selected_areas, selected_coordinates = launch_image_selector(power_measurement[0])
+
+            x1, y1, x2, y2 = selected_coordinates[0]
+            images_left = power_measurement[..., y1:y2, x1:x2]
+            powers_left = np.mean(images_left, axis=(1, 2))
+
+            x1, y1, x2, y2 = selected_coordinates[1]
+            images_right = power_measurement[..., y1:y2, x1:x2]
+            powers_right = np.mean(images_right, axis=(1, 2))
+
+            # There should be some frame filtering here
+            good_powers_right = powers_right
+            good_powers_left = powers_left
+            good_powers_total = powers_right + powers_left
+            good_images = np.array([images_left, images_right])
 
         if not use_encoder:
             psg_angles = measurement["PSG_COMMAND_ANGLES"]
@@ -716,9 +848,14 @@ def load_fits_data(measurement_pth, calibration_pth, dark_pth=None, use_encoder=
             psa_angles = measurement["PSA_ENCODER_ANGLES"]
 
         experiment_data = {
-            "images": power_measurement,
+            "images": good_images,
             "psg_angles": psg_angles,
-            "psa_angles": psa_angles
+            "psa_angles": psa_angles,
+            "powers_left": good_powers_left,
+            "powers_right": good_powers_right,
+            "powers_total": good_powers_total,
+            "reference_channel": reference_channel,
+            "other_channel": other_channel
         }
 
         drrp_raw_data[key] = experiment_data
@@ -726,4 +863,4 @@ def load_fits_data(measurement_pth, calibration_pth, dark_pth=None, use_encoder=
     return drrp_raw_data
 
 
-def subaperture_fits_data(drrp_raw_data):
+# def subaperture_fits_data(drrp_raw_data):

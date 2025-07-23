@@ -1,10 +1,6 @@
-"""
-A vibe-coded gui module to try and make image cropping a little easier
-"""
-
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import numpy as np
+from katsu.katsu_math import np
 from PIL import Image, ImageTk
 
 class ImageSquareSelector:
@@ -80,25 +76,23 @@ class ImageSquareSelector:
     def load_image_from_array(self):
         """Load image from numpy array and display it"""
         try:
-            # Ensure the array is in the correct format
-            if self.image_array.dtype != np.uint16:
-                # Normalize if needed
-                if self.image_array.max() <= 1.0:
-                    self.image_array = (self.image_array * 255).astype(np.uint16)
-                else:
-                    self.image_array = self.image_array.astype(np.uint16)
+            # Store original dtype for later use
+            self.original_dtype = self.image_array.dtype
+
+            # Create a display version of the array (convert to uint8 for display only)
+            display_array = self._convert_for_display(self.image_array)
 
             # Handle different array shapes
-            if len(self.image_array.shape) == 2:
+            if len(display_array.shape) == 2:
                 # Grayscale image
-                self.image = Image.fromarray(self.image_array, mode='L')
-            elif len(self.image_array.shape) == 3:
-                if self.image_array.shape[2] == 3:
+                self.image = Image.fromarray(display_array, mode='L')
+            elif len(display_array.shape) == 3:
+                if display_array.shape[2] == 3:
                     # RGB image
-                    self.image = Image.fromarray(self.image_array, mode='RGB')
-                elif self.image_array.shape[2] == 4:
+                    self.image = Image.fromarray(display_array, mode='RGB')
+                elif display_array.shape[2] == 4:
                     # RGBA image
-                    self.image = Image.fromarray(self.image_array, mode='RGBA')
+                    self.image = Image.fromarray(display_array, mode='RGBA')
                 else:
                     raise ValueError("Unsupported number of channels")
             else:
@@ -119,6 +113,38 @@ class ImageSquareSelector:
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load image from array: {str(e)}")
+
+    def _convert_for_display(self, array):
+        """Convert array to uint8 for display purposes while preserving original data"""
+        if array.dtype == np.uint8:
+            return array
+        elif array.dtype == np.uint16:
+            # Convert uint16 to uint8 for display (scale down from 16-bit to 8-bit)
+            return (array / 256).astype(np.uint8)
+        elif array.dtype == np.float64 or array.dtype == np.float32:
+            # Handle float arrays
+            if array.max() <= 1.0:
+                # Assume normalized (0-1) float
+                return (array * 255).astype(np.uint8)
+            else:
+                # Assume float values in 0-255 range or higher
+                # Normalize to 0-255 range
+                min_val = array.min()
+                max_val = array.max()
+                if max_val > min_val:
+                    normalized = (array - min_val) / (max_val - min_val) * 255
+                    return normalized.astype(np.uint8)
+                else:
+                    return np.zeros_like(array, dtype=np.uint8)
+        else:
+            # For other dtypes, try to normalize to 0-255 range
+            min_val = array.min()
+            max_val = array.max()
+            if max_val > min_val:
+                normalized = (array - min_val) / (max_val - min_val) * 255
+                return normalized.astype(np.uint8)
+            else:
+                return np.zeros_like(array, dtype=np.uint8)
 
     def load_image(self):
         file_path = filedialog.askopenfilename(
@@ -240,6 +266,7 @@ class ImageSquareSelector:
         self.active_square = None
 
     def save_selected_areas(self):
+        """Saves the image and coordinates of the selected areas"""
         if self.image_array is None:
             messagebox.showerror("Error", "No image array provided")
             return
@@ -255,9 +282,11 @@ class ImageSquareSelector:
 
             img_height, img_width = self.image_array.shape[:2]
             selected_areas = []
+            selected_coordinates = []
 
             # Process both squares
             for i, coords in enumerate([coords1, coords2], 1):
+
                 x1, y1, x2, y2 = coords
 
                 # Ensure coordinates are within image bounds
@@ -265,30 +294,33 @@ class ImageSquareSelector:
                 y1 = max(0, min(int(y1), img_height))
                 x2 = max(0, min(int(x2), img_width))
                 y2 = max(0, min(int(y2), img_height))
-
                 if x1 >= x2 or y1 >= y2:
                     messagebox.showerror("Error", f"Invalid selection area for square {i}")
                     return
 
-                # Extract the area directly from the numpy array
+                coordinates = (x1, y1, x2, y2)
+                selected_coordinates.append(coordinates)
+
+                # Extract the area directly from the original numpy array (preserving dtype)
                 area_array = self.image_array[y1:y2, x1:x2]
                 selected_areas.append(area_array)
 
-                print(f"Square {i} - Shape: {area_array.shape}, Coordinates: ({x1}, {y1}) to ({x2}, {y2})")
+                print(f"Square {i} - Shape: {area_array.shape}, Coordinates: ({x1}, {y1}) to ({x2}, {y2}), dtype: {area_array.dtype}")
 
             self.selected_areas = selected_areas
+            self.selected_coordinates = selected_coordinates
 
             messagebox.showinfo("Success",
                 f"Both areas saved as numpy arrays!\n"
-                f"Area 1 shape: {selected_areas[0].shape}\n"
-                f"Area 2 shape: {selected_areas[1].shape}")
+                f"Area 1 shape: {selected_areas[0].shape}, dtype: {selected_areas[0].dtype}\n"
+                f"Area 2 shape: {selected_areas[1].shape}, dtype: {selected_areas[1].dtype}")
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save selected areas: {str(e)}")
 
     def get_selected_areas(self):
         """Returns both selected areas as a list of numpy arrays"""
-        return self.selected_areas
+        return self.selected_areas, self.selected_coordinates
 
 def launch_image_selector(image_array):
     """Main function to launch the GUI with a numpy array"""
@@ -299,11 +331,8 @@ def launch_image_selector(image_array):
 
 # Example usage
 if __name__ == "__main__":
-    # Example: Create a sample numpy array (replace with your actual image array)
-    # You can load an image and convert it to numpy array like this:
-    # from PIL import Image
-    # image = Image.open("your_image.jpg")
-    # image_array = np.array(image)
+
+    # Example to run for GUI testing
     import matplotlib.pyplot as plt
     import ipdb
     from astropy.io import fits
@@ -314,11 +343,13 @@ if __name__ == "__main__":
     hdul = fits.open(pth)
     sample_image = hdul["PSA_IMAGES"].data[0]
 
-    # For demonstration, create a random RGB image
-    # sample_image = np.random.randint(0, 256, (400, 600), dtype=np.uint8)
+    print(f"Input image dtype: {sample_image.dtype}")
+    print(f"Input image shape: {sample_image.shape}")
+    print(f"Input image value range: {sample_image.min()} to {sample_image.max()}")
 
     # Launch the GUI
-    selected_areas = launch_image_selector(sample_image)
+    selected_areas, selected_coordinates = launch_image_selector(sample_image)
+    print(selected_coordinates)
 
     plt.figure()
     for i, area in enumerate(selected_areas):
@@ -328,7 +359,9 @@ if __name__ == "__main__":
 
     # The selected areas will be available after the GUI is closed
     if selected_areas and len(selected_areas) == 2:
-        print(f"Area 1 shape: {selected_areas[0].shape}")
-        print(f"Area 2 shape: {selected_areas[1].shape}")
-        print(f"Data types: {selected_areas[0].dtype}, {selected_areas[1].dtype}")
+        print(f"\nResults:")
+        print(f"Area 1 shape: {selected_areas[0].shape}, dtype: {selected_areas[0].dtype}")
+        print(f"Area 2 shape: {selected_areas[1].shape}, dtype: {selected_areas[1].dtype}")
+        print(f"Area 1 value range: {selected_areas[0].min()} to {selected_areas[0].max()}")
+        print(f"Area 2 value range: {selected_areas[1].min()} to {selected_areas[1].max()}")
         # You can now use both selected_areas numpy arrays for further processing
