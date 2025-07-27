@@ -6,6 +6,7 @@ from .writing import *
 from .binning import *
 from .centering import *
 from .gui import *
+from .plotting import *
 
 from warnings import warn
 

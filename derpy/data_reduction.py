@@ -3,6 +3,7 @@ from katsu.katsu_math import broadcast_kron, np
 from katsu.mueller import linear_polarizer, linear_retarder, linear_diattenuator
 from skimage.registration import phase_cross_correlation
 from scipy.ndimage import center_of_mass, shift
+import ipdb
 
 from .gui import launch_image_selector
 from .centering import robust_circle_fit
@@ -700,7 +701,7 @@ def reduce_data(data, centering='circle', mask=None):
         A numpy array of images after compensation for source fluctuations and alignment.
     """
 
-    assert centering in ['circle', 'com'], "centering must be either 'circle' or 'com'"
+    assert centering in ['circle', 'com', None], "centering must be either 'circle' or 'com'"
 
     if "angles" in data.keys():
         angles = data["angles"]
@@ -714,6 +715,9 @@ def reduce_data(data, centering='circle', mask=None):
     reference_channel = data["reference_channel"]
     other_channel = data["other_channel"]
 
+    # ensure there aren't negative numbers
+    images[images <= 0] = 1
+
 
     # Phase cross-correlation to align the images
     for i, img in enumerate(images):
@@ -723,6 +727,7 @@ def reduce_data(data, centering='circle', mask=None):
             ref_image = images[i, reference_channel]
 
             if centering == 'circle':
+
                 # Center the reference image using circle fitting
                 ref_image, shift_px, circle_params = robust_circle_fit(ref_image)
 
@@ -731,18 +736,27 @@ def reduce_data(data, centering='circle', mask=None):
                 ref_image = center_beam(ref_image)
                 circle_params = 0
 
+            # If centering is not supported, don't do anything
+            else:
+                # Center the reference image using circle fitting
+                # Get circle params but pass centered img to void register
+                _, shift_px, circle_params = robust_circle_fit(ref_image)
+                pass
+
         # have to do for the left and right channels separately
-        for channel in range(2):
+        if centering is not None:
+            for channel in range(2):
 
-            # Calculate the shift between the current image and the reference image
-            shift_y, shift_x = phase_cross_correlation(ref_image,
-                                                       images[i, channel],
-                                                       upsample_factor=10)[0]
+                # Calculate the shift between the current image and the reference image
+                shift_y, shift_x = phase_cross_correlation(ref_image,
+                                                        images[i, channel],
+                                                        upsample_factor=10)[0]
 
-            # Apply the shift to the current image
-            images[i, channel] = shift(images[i, channel], shift=(shift_y, shift_x), mode='wrap')
+                # Apply the shift to the current image
+                images[i, channel] = shift(images[i, channel], shift=(shift_y, shift_x), mode='wrap')
 
     # Perform power normalization now that frames are co-registered
+    images = np.swapaxes(images, 0, 1)
     for i, img in enumerate(images):
 
         p_ref = img[0] + img[1]  # total power in the frame
@@ -757,6 +771,8 @@ def reduce_data(data, centering='circle', mask=None):
         set = img / p_ref * 0.5
         images[i, 0] = set[0] # [zero_mask]
         images[i, 1] = set[1] # [zero_mask]
+
+    images = np.swapaxes(images, 0, 1)
 
     # returns centered images
     return images, circle_params

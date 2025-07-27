@@ -13,6 +13,7 @@ import sys
 try:
     sys.path.append(FLI_SDK_PTH)
     import FliSdk_V2 as sdk
+
 except ImportError:
     warn(f"FliSdk_V2 not found at {FLI_SDK_PTH}. \n Make sure the SDK is installed and in your PYTHONPATH.")
 
@@ -75,14 +76,14 @@ class CRED2:
         assert ok, "Error while setting camera"
 
         update_context(self.context)
-        
+
         initial_temp = display_all_temps(self.context)
 
         ok = sdk.FliCredTwo.SetSensorTemp(self.context, self.set_temp)
         assert ok, "Error while setting camera temperature"
 
         sensor_temp = display_all_temps(self.context)
-        
+
 
         # Use np.isclose() to check if the temperature is within tolerance
         tol = temp_tolerance # absolute tolerance
@@ -92,7 +93,7 @@ class CRED2:
             while not np.isclose(self.set_temp, sensor_temp, rtol=rtol, atol=tol):
                 sensor_temp = display_all_temps(self.context)
                 self.temperature_change.append(sensor_temp)
-                time.sleep(CAMERA_TEMP_READOUT_DELAY)           
+                time.sleep(CAMERA_TEMP_READOUT_DELAY)
 
 
         self.sensor_temp = display_all_temps(self.context, verbose=False)
@@ -106,7 +107,7 @@ class CRED2:
     @property
     def fps(self):
         return self._fps
-    
+
     @fps.setter
     def fps(self, value):
         self._fps = float(value)
@@ -120,7 +121,7 @@ class CRED2:
     @property
     def tint(self):
         return self._tint
-    
+
     @tint.setter
     def tint(self, value):
         """set the integration time of the camera in ms
@@ -147,9 +148,9 @@ class CRED2:
             maxtint = self.max_tint
 
             assert (value > mintint) and (value < maxtint), f"tint value {value}ms must be between {mintint} and {maxtint}"
-           
+
             sdk.FliCredTwo.SetTint(self.context, float(float(value)/1000))
-            
+
             ok = sdk.Update(self.context)
             assert ok, "Error while setting tint"
 
@@ -162,11 +163,11 @@ class CRED2:
 
         else:
             raise Exception("Camera is not a Cred2 or Cred3")
-        
+
     @property
     def conversion_gain(self):
         return self._conversion_gain
-    
+
     @conversion_gain.setter
     def conversion_gain(self, value):
         self._conversion_gain = value
@@ -209,7 +210,7 @@ class CRED2:
         return frame_list
 
     def take_median_image(self, n_frames, save_path=None, verbose=False):
-        frame_list = self.take_many_images(n_frames, save_path=save_path, verbose=verbose) 
+        frame_list = self.take_many_images(n_frames, save_path=save_path, verbose=verbose)
         frame_list_median = np.median(frame_list, axis=0)
 
         if save_path is not None:
@@ -217,10 +218,10 @@ class CRED2:
             hdul = fits.HDUList([hdu])
             hdul.writeto(f'{save_path}_median', overwrite=True) # overwrites original, non-median-combined image
 
-        return frame_list_median 
-    
+        return frame_list_median
+
     def take_mean_image(self, n_frames, save_path=None, verbose=False):
-        frame_list = self.take_many_images(n_frames, save_path=save_path, verbose=verbose) 
+        frame_list = self.take_many_images(n_frames, save_path=save_path, verbose=verbose)
         frame_list_mean = np.mean(frame_list, axis=0)
 
         if save_path is not None:
@@ -228,10 +229,10 @@ class CRED2:
             hdul = fits.HDUList([hdu])
             hdul.writeto(f'{save_path}_mean', overwrite=True) # overwrites original, non-mean-combined image
 
-        return frame_list_mean 
-    
+        return frame_list_mean
+
     def take_std_image(self, n_frames, save_path=None, verbose=False):
-        frame_list = self.take_many_images(n_frames, save_path=save_path, verbose=verbose) 
+        frame_list = self.take_many_images(n_frames, save_path=save_path, verbose=verbose)
         frame_list_std = np.std(frame_list, axis=0)
 
         if save_path is not None:
@@ -239,7 +240,7 @@ class CRED2:
             hdul = fits.HDUList([hdu])
             hdul.writeto(f'{save_path}_std', overwrite=True) # overwrites original, non-std-combined image
 
-        return frame_list_std 
+        return frame_list_std
 
     def take_image(self, save_path=None, verbose=False):
 

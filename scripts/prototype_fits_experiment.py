@@ -24,7 +24,7 @@ ANGULAR_STEP = 3.6  # degrees
 ANGULAR_RATIO = 2.5  # degrees
 N_CAL_MEASUREMENTS = 24
 N_MEASUREMENTS = 50
-DATA_PATH = Path.home() / "Desktop/derp_data/07-14-2025/depolarizer_psa_wollaston1deg_intsrphere"
+DATA_PATH = Path.home() / "Data/Derpy/07-14-2025/depolarizer_psa_wollaston1deg_intsrphere"
 TINT = 50 # milliseconds
 FPS = 10
 SET_TEMPERATURE = -40  # degrees Celsius
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     psg.home()
     psa.home()
 
-    # images after stage moves, 
+    # images after stage moves,
     # NOTE that we do polarimetric data reduction on the PSA images
     psg_images = []
     psg_command_angles = []
@@ -100,20 +100,20 @@ if __name__ == "__main__":
             # Move the PSG stage
             if i != 0:
                 psg.step(ANGULAR_STEP)
-            
+
             if SAVE_PSG_IMGS:
-            
+
                 imstack = cam.take_many_images(N_MEDIANS)
 
                 if DARK_SUBTRACT:
                     imstack_darksub = [im - dark for im in imstack]
                 else:
                     imstack_darksub = imstack
-                
+
                 # Save the data
                 psg_img_temps.append(display_all_temps(cam.context, verbose=False))
                 psg_images.append(np.median(imstack_darksub, axis=0))
-            
+
             # Save the command and encoder angles
             psg_command_angles.append(angle)
             psg_encoder_angles.append(psg.get_current_position())
@@ -172,7 +172,7 @@ if __name__ == "__main__":
 
         # The PSG data
         psg_hdu = fits.ImageHDU(data=psg_cube, name='PSG_IMAGES')
-        
+
         # NOTE
         # for the love of god please don't ask me why this is necessary,
         # I tried PrimaryHDU and it didn't let me name it. And I tried BinTableHDU and it
@@ -185,14 +185,14 @@ if __name__ == "__main__":
 
         psg_encoder_angles_hdu = fits.ImageHDU(data=np.asarray(psg_encoder_angles), name='PSG_ENCODER_ANGLES')
         psg_encoder_angles_hdu.header['UNITS'] = 'DEGREES'
-        
+
         # The PSA data
         psa_hdu = fits.ImageHDU(data=psa_cube, name='PSA_IMAGES')
 
         # NOTE
         # for the love of god please don't ask me why this is necessary,
-        # I tried PrimaryHDU and it didn't let me name it. And I tried BinTableHDU and it 
-        # vomited out the numpy array and threw a big error. 
+        # I tried PrimaryHDU and it didn't let me name it. And I tried BinTableHDU and it
+        # vomited out the numpy array and threw a big error.
         psa_temp_hdu = fits.ImageHDU(data=np.asarray(psa_img_temps), name='PSA_TEMPERATURES')
         psa_temp_hdu.header['UNITS'] = 'CELSIUS'
 
@@ -221,4 +221,3 @@ if __name__ == "__main__":
 
     t2 = perf_counter()
     print(f"Experiment completed in {t2 - t1:.2f} seconds.")
-
