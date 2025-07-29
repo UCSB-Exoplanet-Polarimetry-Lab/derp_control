@@ -674,7 +674,7 @@ def q_continuum_from_experiment(experiment, channel="dual"):
 
 
 # Inherits from github.com/Jashcraf/Spatial_Calibration
-def reduce_data(data, centering='circle', mask=None):
+def reduce_data(data, centering='circle', mask=None, bin=None):
     """ Reduces the data by compensating for source fluctuations and aligning images
     using phase cross-correlation.
 
@@ -772,7 +772,19 @@ def reduce_data(data, centering='circle', mask=None):
         images[i, 0] = set[0] # [zero_mask]
         images[i, 1] = set[1] # [zero_mask]
 
-    images = np.swapaxes(images, 0, 1)
+    # Bin the image if binning is specified
+    if bin is not None:
+        binned_images_left = []
+        binned_images_right = []
+        for i, img in enumerate(images):
+
+            binned_images_left.append(bin_array_2d(img[0], bin, method='median'))
+            binned_images_right.append(bin_array_2d(img[1], bin, method='median'))
+
+        images = np.stack([binned_images_left, binned_images_right], axis=0)
+
+    else:
+        images = np.swapaxes(images, 0, 1)
 
     # returns centered images
     return images, circle_params
@@ -834,27 +846,26 @@ def load_fits_data(measurement_pth, calibration_pth,
     for pth, key in zip(pths, experiment_keys):
 
         # Load the data
-        measurement = fits.open(measurement_pth)
-        power_measurement = measurement["PSG_IMAGES"].data
+        measurement = fits.open(pth)
+        power_measurement = measurement["PSA_IMAGES"].data
 
         # Subaperture based on the Calibration file
         if key == "Calibration":
-
             selected_areas, selected_coordinates = launch_image_selector(power_measurement[0])
 
-            x1, y1, x2, y2 = selected_coordinates[0]
-            images_left = power_measurement[..., y1:y2, x1:x2]
-            powers_left = np.mean(images_left, axis=(1, 2))
+        x1, y1, x2, y2 = selected_coordinates[0]
+        images_left = power_measurement[..., y1:y2, x1:x2]
+        powers_left = np.median(images_left, axis=(1, 2))
 
-            x1, y1, x2, y2 = selected_coordinates[1]
-            images_right = power_measurement[..., y1:y2, x1:x2]
-            powers_right = np.mean(images_right, axis=(1, 2))
+        x1, y1, x2, y2 = selected_coordinates[1]
+        images_right = power_measurement[..., y1:y2, x1:x2]
+        powers_right = np.median(images_right, axis=(1, 2))
 
-            # There should be some frame filtering here
-            good_powers_right = powers_right
-            good_powers_left = powers_left
-            good_powers_total = powers_right + powers_left
-            good_images = np.array([images_left, images_right])
+        # There should be some frame filtering here
+        good_powers_right = powers_right
+        good_powers_left = powers_left
+        good_powers_total = powers_right + powers_left
+        good_images = np.array([images_left, images_right])
 
         if not use_encoder:
             psg_angles = measurement["PSG_COMMAND_ANGLES"]

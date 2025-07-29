@@ -237,7 +237,7 @@ def forward_model(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, du
                                        basis,
                                        psg_angles,
                                        rotation_ratio,
-                                       psa_angles)
+                                       psa_angles=psa_angles)
     else:
         mueller_states = dual_I_mueller_state(x0,
                                        basis,

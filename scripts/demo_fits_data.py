@@ -36,8 +36,8 @@ CAL_DIR = Path.home() / "Downloads/derp-selected/air_wollaston1deg_intsrphere/ca
 DATA_DIR = Path.home() / "Downloads/derp-selected/air_wollaston1deg_intsrphere/measurement_data_2025-07-14_17-32-59.fits"
 
 # Measuring air with depolarizer in PSA
-CAL_DIR = Path.home() / "Downloads/derp-selected/depolarizer_psa_wollaston1deg_intsrphere/calibration_data_2025-07-14_18-46-29.fits"
-DATA_DIR = Path.home() / "Downloads/derp-selected/depolarizer_psa_wollaston1deg_intsrphere/measurement_data_2025-07-14_18-46-38.fits"
+# CAL_DIR = Path.home() / "Downloads/derp-selected/depolarizer_psa_wollaston1deg_intsrphere/calibration_data_2025-07-14_18-46-29.fits"
+# DATA_DIR = Path.home() / "Downloads/derp-selected/depolarizer_psa_wollaston1deg_intsrphere/measurement_data_2025-07-14_18-46-38.fits"
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -47,16 +47,15 @@ loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
 # Reduce the data
 out = loaded_data["Calibration"]
 out_exp = loaded_data["Measurement"]
-reduced_cal, circle_params = derp.reduce_data(out, centering=None)
-reduced_exp, circle_params_exp = derp.reduce_data(out_exp, centering=None)
-
+reduced_cal, circle_params = derp.reduce_data(out, centering=None, bin=3)
+reduced_exp, circle_params_exp = derp.reduce_data(out_exp, centering=None, bin=3)
 
 # Extract which channel we are operating on
 if CHANNEL == 'Left':
     # true_frames = reduced_cal[:, 0]
     # exp_frames = reduced_exp[:, 0]
-    true_frames = reduced_cal[0]
-    exp_frames = reduced_exp[0]
+    true_frames = reduced_cal[0][:24]
+    exp_frames = reduced_exp[0][24:]
 
     # get in orientation spatial calibration likes
     # true_frames = np.moveaxis(true_frames,0, -1)
@@ -83,8 +82,9 @@ elif CHANNEL == 'Both':
     exp_frames = np.concatenate([left_frames, right_frames])
     warn("Channel 'Both' is untested, be wary of results")
 
+
 # Generate polynomials
-NMODES = 128
+NMODES = 1
 NPIX = true_frames.shape[-1]
 basis = create_modal_basis(NMODES, NPIX)
 
@@ -127,11 +127,32 @@ x0 = np.random.random(4 + 2*len(basis)) / 10
 # ensures the piston term is quarter-wave to start / also need the second
 x0[4] = np.pi / 4
 x0[4 + len(basis)] = np.pi / 4
-psg_angles = np.radians(out['psg_angles'].data)
+psg_angles = np.radians(out['psg_angles'].data[:24])
+psa_angles = np.radians(out['psa_angles'].data[:24])
 
 set_backend_to_jax()
 
 def loss(x):
+
+    if CHANNEL.lower() == "both":
+        sim_frames = forward_model(x, basis_masked, psg_angles,
+                                    rotation_ratio=2.5,
+                                    dual_I=True)
+    else:
+        sim_frames = forward_model(x, basis_masked, psg_angles,
+                                    rotation_ratio=2.5,
+                                    dual_I=False,
+                                    psa_angles=psa_angles)
+
+    sim_array = np.asarray(sim_frames)[mask_extend]
+    true_array = np.asarray(true_frames)[mask_extend]
+
+    # nanmean is important for masked values
+    MSE = np.nanmedian((sim_array - true_array)**2)
+
+    return MSE
+
+def loss_w_stop(x):
 
     if CHANNEL.lower() == "both":
         sim_frames = forward_model(x, basis_masked, psg_angles,
@@ -145,11 +166,12 @@ def loss(x):
     sim_array = np.asarray(sim_frames)[mask_extend]
     true_array = np.asarray(true_frames)[mask_extend]
 
+    ipdb.set_trace()
+
     # nanmean is important for masked values
     MSE = np.nanmean((sim_array - true_array)**2)
 
     return MSE
-
 loss_fg = value_and_grad(loss)
 
 # Callback at every function initialization
@@ -162,12 +184,13 @@ def callback_function(xk):
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
-                    options={"maxiter":1e10, "ftol":1e-20, "gtol":1e-20})
-
-ipdb.set_trace()
+                    options={"maxiter":1e10, "ftol":1e-30, "gtol":1e-30})
 
 if pbar is not None:
     pbar.close()
+
+# This is to debug error in the model
+# loss_w_stop(results.x)
 
 # extract the retarder coeffs
 psg_ret_coeffs = results.x[4 : 4+len(basis)]
@@ -199,7 +222,7 @@ del psg_retarder_estimate, psa_retarder_estimate
 
 # create simulated power
 if not CHANNEL.lower() == "both":
-    sim_frames = forward_model(results.x, basis_masked, psg_angles, rotation_ratio=2.5)
+    sim_frames = forward_model(results.x, basis_masked, psg_angles, psa_angles=psa_angles)
 else:
     sim_frames = forward_model(results.x, basis_masked, psg_angles,
                                 rotation_ratio=2.5,
@@ -231,12 +254,12 @@ plt.legend()
 # Update results.x with the global rotation
 spatial_cal_results = results.x.copy()
 
-spatial_cal_results[2] += np.radians(180)
-spatial_cal_results[3] += np.radians(450)
+# spatial_cal_results[2] += psg_angles[-1]
+# spatial_cal_results[3] += psa_angles[-1]
 
 # experiment PSG angles
-psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
-psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
+psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))[24:]
+psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))[24:]
 
 
 if CHANNEL.lower() == "both":
@@ -268,7 +291,7 @@ M_meas /= M_meas[..., 0, 0, None, None]
 I = np.eye(4)
 
 med_M = np.median(M_meas[mask], axis=0)
-var = (np.abs(med_M) - I)**2
+var = (med_M - I)**2
 rms = np.sqrt(np.sum(var))
 
 derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix, "+fr"$\sigma={rms:.5f}$", vmin=-1, vmax=1, cmap="RdBu_r")
@@ -280,6 +303,3 @@ hdu = fits.PrimaryHDU(M_meas)
 hdu.header["NMODES"] = (NMODES, "Number of Spatial Modes used to calibrate")
 hdu.header["WAVELENGTH"] = (WAVELENGTH_SELECT, "Measured Wavelength")
 hdu.writeto(f"spatial_cal_gpi_hwp_{NMODES}modes_1e-40ftol.fits", overwrite=True)
-
-
-print(f"runtime = {perf_counter() - t1}")

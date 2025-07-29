@@ -68,6 +68,7 @@ if __name__ == "__main__":
 
     # images after stage moves,
     # NOTE that we do polarimetric data reduction on the PSA images
+    # TODO: Need to put definitions inside experiment loop
     psg_images = []
     psg_command_angles = []
     psg_encoder_angles = []
