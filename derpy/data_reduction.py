@@ -4,6 +4,8 @@ from katsu.mueller import linear_polarizer, linear_retarder, linear_diattenuator
 from skimage.registration import phase_cross_correlation
 from scipy.ndimage import center_of_mass, shift
 import ipdb
+import os
+import json
 
 from .gui import launch_image_selector
 from .centering import robust_circle_fit
@@ -851,7 +853,17 @@ def load_fits_data(measurement_pth, calibration_pth,
 
         # Subaperture based on the Calibration file
         if key == "Calibration":
-            selected_areas, selected_coordinates = launch_image_selector(power_measurement[0])
+            # selected_areas, selected_coordinates = launch_image_selector(power_measurement[0])
+            # check to see if there's a path called "image_selection.json"
+            if os.path.exists("image_selection.json"):
+                with open("image_selection.json", "r") as f:
+                    selected_coordinates = json.load(f)
+            else:
+                selected_areas, selected_coordinates = launch_image_selector(power_measurement[0])
+                # Save the selected areas
+                with open("image_selection.json", "w") as f:
+                    json.dump(selected_coordinates, f)
+
 
         x1, y1, x2, y2 = selected_coordinates[0]
         images_left = power_measurement[..., y1:y2, x1:x2]

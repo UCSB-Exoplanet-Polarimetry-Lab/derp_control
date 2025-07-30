@@ -40,7 +40,7 @@ def sum_of_2d_modes_wrapper(modes, weights):
         return jax_sum_of_2d_modes(modes, weights)
 
 
-def create_modal_basis(num_modes, num_pix):
+def create_modal_basis(num_modes, num_pix, angle_offset=0):
     """Generates a zernike polynomial basis
 
     Parameters
@@ -51,6 +51,8 @@ def create_modal_basis(num_modes, num_pix):
         to noll index = num_modes + 1
     num_pix : int
         number of samples to use across the array
+    angle_offset : float
+        angle offset for the angular coordinate of the basis
 
     Returns
     -------
@@ -62,6 +64,7 @@ def create_modal_basis(num_modes, num_pix):
     # assume a unit disk
     x, y = make_xy_grid(num_pix, diameter=2)
     r, t = cart_to_polar(x, y)
+    t = t + angle_offset
 
     # build the polynomials
     # NOTE: num_modes is total number of modes, since we start the Zernike
@@ -71,6 +74,99 @@ def create_modal_basis(num_modes, num_pix):
 
     return basis
 
+def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, psa_offset=0):
+    """
+    Constructs the Mueller states for the given parameters, broadcast for more efficient computation.
+
+    Parameters
+    ----------
+    x0 : ndarray
+        initial coefficients for the forward model
+    basis : list of ndarrays
+        modal basis used in the forward model
+    psg_angles : ndarray
+        angles of the PSG waveplate
+    rotation_ratio : float, optional
+        ratio of PSA to PSG angles, by default 2.5
+    psa_angles : ndarray, optional
+        angles of the PSA polarizers, by default None. Setting this kwarg
+        overrides the rotation_ratio.
+    psa_offset : float, optional
+        Offset to apply to the analyzer in radians. Useful for Dual-I-inversion.
+
+    Returns
+    -------
+    ndarray
+        list of Mueller matrices constructed from the given parameters evaluated
+        at the given psg and psa angles.
+    """
+
+    # extract the front elements that contain the polarizer angles
+    psg_pol_angle = x0[0]
+    psa_pol_angle = x0[1] + psa_offset
+
+    # extract the front elements that contain the waveplate angles
+    psg_wvp_angle_offset = x0[2]
+    psa_wvp_angle_offset = x0[3]
+
+    # split the remaining coefficients into PSG and PSA retarder
+    psg_wvp_coeffs = x0[4 : 4+len(basis)]
+    psa_wvp_coeffs = x0[4+len(basis) : 4 + 2*len(basis)]
+
+    # Good to make sure we are splitting the list correctly
+    assert len(psg_wvp_coeffs) == len(basis)
+    assert len(psa_wvp_coeffs) == len(basis)
+
+    # Computes from a rotation ratio if PSA angles not supplied
+    if psa_angles is None:
+        psa_angles = rotation_ratio * psg_angles
+
+    # Begin the construction of power frames
+    PSAs = []
+    PSGs = []
+
+    # Construct the retardance estimation
+    # TODO: Implement more user-friendly way of doing this
+    basis_npix = basis[0].shape[0]
+    basis_nmode = len(basis)
+
+    # Assemble retarders at various rotations
+    psg_ret = []
+    psa_ret = []
+    for psg, psa in zip(psg_angles, psa_angles):
+
+        # construct a new basis
+        basis_psg = create_modal_basis(basis_nmode, basis_npix, angle_offset=0 * psg)
+        basis_psa = create_modal_basis(basis_nmode, basis_npix, angle_offset=0 * psa)
+
+        psg_ret.append(sum_of_2d_modes_wrapper(basis_psg, psg_wvp_coeffs))
+        psa_ret.append(sum_of_2d_modes_wrapper(basis_psa, psa_wvp_coeffs))
+
+
+    psg_ret = np.asarray(psg_ret)
+    psg_ret = np.moveaxis(psg_ret, 0, -1)
+    psa_ret = np.asarray(psa_ret)
+    psa_ret = np.moveaxis(psa_ret, 0, -1)
+
+    # Npix x Npix x Nangle
+    psg_angles = np.broadcast_to(psg_angles, [*psg_ret.shape])
+    psa_angles = np.broadcast_to(psa_angles, [*psa_ret.shape])
+
+    # Fixed quantity
+    psg_pol = linear_polarizer(psg_pol_angle)
+    psa_pol = linear_polarizer(psa_pol_angle)
+
+    # I believe this rotates
+    psg_wvp = linear_retarder(psg_angles, psg_ret, shape=[*psg_ret.shape])
+    psa_wvp = linear_retarder(psa_angles, psa_ret, shape=[*psa_ret.shape])
+
+    PSGs = psg_wvp @ psg_pol
+    PSAs = psa_pol @ psa_wvp
+    # pack NMEAS dimension appropriately
+    #PSGs = np.moveaxis(PSGs, 0, -3) # skips mueller matrix dimensions
+    #PSAs = np.moveaxis(PSAs, 0, -3)
+
+    return PSGs, PSAs
 
 def psg_psa_states(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, psa_offset=0):
     """
@@ -122,6 +218,7 @@ def psg_psa_states(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, p
     # Begin the construction of power frames
     PSAs = []
     PSGs = []
+
     for psg_angle, psa_angle in zip(psg_angles, psa_angles):
 
         # Construct the retardance estimation
