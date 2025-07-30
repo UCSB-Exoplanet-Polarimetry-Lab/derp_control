@@ -148,7 +148,7 @@ def loss(x):
     true_array = np.asarray(true_frames)[mask_extend]
 
     # nanmean is important for masked values
-    MSE = np.nanmedian((sim_array - true_array)**2)
+    MSE = np.median((sim_array - true_array)**2)
 
     return MSE
 
