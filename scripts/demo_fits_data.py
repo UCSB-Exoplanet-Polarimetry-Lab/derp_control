@@ -84,7 +84,7 @@ elif CHANNEL == 'Both':
 
 
 # Generate polynomials
-NMODES = 1
+NMODES = 32
 NPIX = true_frames.shape[-1]
 basis = create_modal_basis(NMODES, NPIX)
 
