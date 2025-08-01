@@ -32,12 +32,13 @@ from derpy.mask import (
 CHANNEL = "Left" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "Downloads/derp-selected/air_wollaston1deg_intsrphere/calibration_data_2025-07-14_17-20-06.fits"
-DATA_DIR = Path.home() / "Downloads/derp-selected/air_wollaston1deg_intsrphere/measurement_data_2025-07-14_17-32-59.fits"
+CAL_DIR = Path.home() / "derp-selected/air_wollaston1deg_intsrphere/calibration_data_2025-07-14_17-20-06.fits"
+DATA_DIR = Path.home() / "derp-selected/air_wollaston1deg_intsrphere/measurement_data_2025-07-14_17-32-59.fits"
 
 # Measuring air with depolarizer in PSA
-# CAL_DIR = Path.home() / "Downloads/derp-selected/depolarizer_psa_wollaston1deg_intsrphere/calibration_data_2025-07-14_18-46-29.fits"
-# DATA_DIR = Path.home() / "Downloads/derp-selected/depolarizer_psa_wollaston1deg_intsrphere/measurement_data_2025-07-14_18-46-38.fits"
+PARENT_DIR = Path.home() / "derp-selected/depolarizer_psa_wollaston1deg_intsrphere"
+CAL_DIR = PARENT_DIR / "calibration_data_2025-07-14_18-33-29.fits"
+DATA_DIR = PARENT_DIR / "measurement_data_2025-07-14_18-46-38.fits"
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -84,7 +85,7 @@ elif CHANNEL == 'Both':
 
 
 # Generate polynomials
-NMODES = 32
+NMODES = 128
 NPIX = true_frames.shape[-1]
 basis = create_modal_basis(NMODES, NPIX)
 
@@ -182,7 +183,7 @@ def callback_function(xk):
 
 results = minimize(loss, x0=x0, method="L-BFGS-B", jac=loss_rev,
                     callback=callback_function,
-                    options={"maxiter":1e10, "ftol":1e-10, "gtol":1e-10})
+                    options={"maxiter":250, "ftol":1e-10, "gtol":1e-10})
 
 if pbar is not None:
     pbar.close()

@@ -219,11 +219,18 @@ def psg_psa_states(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, p
     PSAs = []
     PSGs = []
 
+    basis_npix = basis[0].shape[0]
+    basis_num = len(basis)
+
     for psg_angle, psa_angle in zip(psg_angles, psa_angles):
+        
+        # Need to make a rotated basis
+        basis_psg = create_modal_basis(basis_num, basis_npix, angle_offset=psg_angle)
+        basis_psa = create_modal_basis(basis_num, basis_npix, angle_offset=psa_angle)
 
         # Construct the retardance estimation
-        psg_ret = sum_of_2d_modes_wrapper(basis, psg_wvp_coeffs)
-        psa_ret = sum_of_2d_modes_wrapper(basis, psa_wvp_coeffs)
+        psg_ret = sum_of_2d_modes_wrapper(basis_psg, psg_wvp_coeffs)
+        psa_ret = sum_of_2d_modes_wrapper(basis_psa, psa_wvp_coeffs)
 
         # Constuct angle arrays for all elements in array
         psg_angle = np.full_like(psg_ret, psg_angle + psg_wvp_angle_offset)
