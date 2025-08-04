@@ -47,8 +47,8 @@ loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
 # Reduce the data
 out = loaded_data["Calibration"]
 out_exp = loaded_data["Measurement"]
-reduced_cal, circle_params = derp.reduce_data(out, centering=None, bin=2)
-reduced_exp, circle_params_exp = derp.reduce_data(out_exp, centering=None, bin=2)
+reduced_cal, circle_params = derp.reduce_data(out, centering=None, bin=None)
+reduced_exp, circle_params_exp = derp.reduce_data(out_exp, centering=None, bin=None)
 
 # Extract which channel we are operating on
 if CHANNEL == 'Left':
@@ -122,11 +122,11 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(4 + 2*NMODES) / 10
+x0 = np.random.random(2 + 4*NMODES) / 10
 
 # ensures the piston term is quarter-wave to start / also need the second
-x0[4] = np.pi / 2
-x0[4 + NMODES] = np.pi / 2
+x0[2] = np.pi / 2
+x0[2 + NMODES] = np.pi / 2
 psg_angles = np.radians(out['psg_angles'].data[:24])
 psa_angles = np.radians(out['psa_angles'].data[:24])
 
@@ -183,7 +183,7 @@ def callback_function(xk):
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
-                    options={"maxiter":1000, "ftol":1e-10, "gtol":1e-10})
+                    options={"maxiter":100, "ftol":1e-10, "gtol":1e-10})
 
 if pbar is not None:
     pbar.close()

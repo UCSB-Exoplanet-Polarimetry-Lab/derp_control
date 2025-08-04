@@ -107,19 +107,15 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
     psg_pol_angle = x0[0]
     psa_pol_angle = x0[1] + psa_offset
 
-    # extract the front elements that contain the waveplate angles
-    psg_wvp_angle_offset = x0[2]
-    psa_wvp_angle_offset = x0[3]
-
     # split the remaining coefficients into PSG and PSA retarder
     # if isinstance(psg_wvp_coeffs, jnp.ndarray):
     #     psg_wvp_coeffs = psg_wvp_coeffs.at[1:].set(0.)
     # else:
     #     psg_wvp_coeffs[1:] = 0.
-    psg_wvp_coeffs = x0[4 : 4 + 1 * len(basis)]
-    psa_wvp_coeffs = x0[4 + 1 * len(basis) : 4 + 2 * len(basis)]
-    psg_ang_coeffs = x0[4 + 2 * len(basis) : 4 + 3 * len(basis)]
-    psa_ang_coeffs = x0[4 + 3 * len(basis) : 4 + 4 * len(basis)]
+    psg_wvp_coeffs = x0[2 + 0 * len(basis) : 2 + 1 * len(basis)]
+    psa_wvp_coeffs = x0[2 + 1 * len(basis) : 2 + 2 * len(basis)]
+    psg_ang_coeffs = x0[2 + 2 * len(basis) : 2 + 3 * len(basis)]
+    psa_ang_coeffs = x0[2 + 3 * len(basis) : 2 + 4 * len(basis)]
 
     # Good to make sure we are splitting the list correctly
     assert len(psg_wvp_coeffs) == len(basis)
@@ -140,11 +136,20 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
 
     # Assemble retarders at various rotations
     psg_ret = []
+    psg_ang = []
     psa_ret = []
-
+    psa_ang = []
 
     # Build up the retarders
     for psg, psa in zip(psg_angles, psa_angles):
+
+        # configure the fast axis angle
+        if isinstance(psg_ang_coeffs, jnp.ndarray):
+            psg_ang_coeffs = psg_ang_coeffs.at[0].set(psg)
+            psa_ang_coeffs = psa_ang_coeffs.at[0].set(psa)
+        else:
+            psg_ang_coeffs[0] = psg
+            psa_ang_coeffs[0] = psa
 
         # construct a new basis
         basis_psg = create_modal_basis(basis_nmode, basis_npix, angle_offset=psg.item())
@@ -153,15 +158,23 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
         psg_ret.append(sum_of_2d_modes_wrapper(basis_psg, psg_wvp_coeffs))
         psa_ret.append(sum_of_2d_modes_wrapper(basis_psa, psa_wvp_coeffs))
 
+        psg_ang.append(sum_of_2d_modes_wrapper(basis_psg, psg_ang_coeffs))
+        psa_ang.append(sum_of_2d_modes_wrapper(basis_psa, psa_ang_coeffs))
+
 
     psg_ret = np.asarray(psg_ret)
     psg_ret = np.moveaxis(psg_ret, 0, -1)
+    psg_ang = np.asarray(psg_ang)
+    psg_ang = np.moveaxis(psg_ang, 0, -1)
+
     psa_ret = np.asarray(psa_ret)
     psa_ret = np.moveaxis(psa_ret, 0, -1)
+    psa_ang = np.asarray(psa_ang)
+    psa_ang = np.moveaxis(psa_ang, 0, -1)
 
     # Npix x Npix x Nangle
-    psg_angles = np.broadcast_to(psg_angles + psg_wvp_angle_offset, [*psg_ret.shape])
-    psa_angles = np.broadcast_to(psa_angles + psa_wvp_angle_offset, [*psa_ret.shape])
+    psg_angles = psg_angles + psg_ang
+    psa_angles = psa_angles + psa_ang
 
     # Fixed quantity
     psg_pol = linear_polarizer(psg_pol_angle)
