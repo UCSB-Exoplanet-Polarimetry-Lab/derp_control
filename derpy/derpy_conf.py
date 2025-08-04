@@ -19,7 +19,7 @@ class BackendShim:
 
     def __init__(self, src):
         self._srcmodule = src
- 
+
     def __getattr__(self, key):
         if key == "_srcmodule":
             return self._srcmodule

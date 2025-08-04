@@ -1,12 +1,14 @@
 import numpy as tnp
+import jax.numpy as jnp
 import ipdb
 from katsu.katsu_math import np, broadcast_kron
 from katsu.mueller import linear_retarder, linear_polarizer
 from katsu.polarimetry import drrp_data_reduction_matrix
 
 from prysm.coordinates import make_xy_grid, cart_to_polar
-from prysm.polynomials import noll_to_nm, zernike_nm_seq, sum_of_2d_modes
-
+from prysm.polynomials import noll_to_nm, sum_of_2d_modes
+# from .zernike import zernike_nm_seq
+from prysm.polynomials import zernike_nm_seq
 
 def jax_sum_of_2d_modes(modes, weights):
     """a clone of prysm.polynomials sum_of_2d_modes that works when using
@@ -110,8 +112,14 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
     psa_wvp_angle_offset = x0[3]
 
     # split the remaining coefficients into PSG and PSA retarder
-    psg_wvp_coeffs = x0[4 : 4+len(basis)]
-    psa_wvp_coeffs = x0[4+len(basis) : 4 + 2*len(basis)]
+    # if isinstance(psg_wvp_coeffs, jnp.ndarray):
+    #     psg_wvp_coeffs = psg_wvp_coeffs.at[1:].set(0.)
+    # else:
+    #     psg_wvp_coeffs[1:] = 0.
+    psg_wvp_coeffs = x0[4 : 4 + 1 * len(basis)]
+    psa_wvp_coeffs = x0[4 + 1 * len(basis) : 4 + 2 * len(basis)]
+    psg_ang_coeffs = x0[4 + 2 * len(basis) : 4 + 3 * len(basis)]
+    psa_ang_coeffs = x0[4 + 3 * len(basis) : 4 + 4 * len(basis)]
 
     # Good to make sure we are splitting the list correctly
     assert len(psg_wvp_coeffs) == len(basis)
@@ -133,11 +141,14 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
     # Assemble retarders at various rotations
     psg_ret = []
     psa_ret = []
+
+
+    # Build up the retarders
     for psg, psa in zip(psg_angles, psa_angles):
 
         # construct a new basis
-        basis_psg = create_modal_basis(basis_nmode, basis_npix, angle_offset=0 * psg)
-        basis_psa = create_modal_basis(basis_nmode, basis_npix, angle_offset=0 * psa)
+        basis_psg = create_modal_basis(basis_nmode, basis_npix, angle_offset=psg.item())
+        basis_psa = create_modal_basis(basis_nmode, basis_npix, angle_offset=psa.item())
 
         psg_ret.append(sum_of_2d_modes_wrapper(basis_psg, psg_wvp_coeffs))
         psa_ret.append(sum_of_2d_modes_wrapper(basis_psa, psa_wvp_coeffs))
@@ -149,8 +160,8 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
     psa_ret = np.moveaxis(psa_ret, 0, -1)
 
     # Npix x Npix x Nangle
-    psg_angles = np.broadcast_to(psg_angles, [*psg_ret.shape])
-    psa_angles = np.broadcast_to(psa_angles, [*psa_ret.shape])
+    psg_angles = np.broadcast_to(psg_angles + psg_wvp_angle_offset, [*psg_ret.shape])
+    psa_angles = np.broadcast_to(psa_angles + psa_wvp_angle_offset, [*psa_ret.shape])
 
     # Fixed quantity
     psg_pol = linear_polarizer(psg_pol_angle)
@@ -223,7 +234,7 @@ def psg_psa_states(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, p
     basis_num = len(basis)
 
     for psg_angle, psa_angle in zip(psg_angles, psa_angles):
-        
+
         # Need to make a rotated basis
         basis_psg = create_modal_basis(basis_num, basis_npix, angle_offset=psg_angle)
         basis_psa = create_modal_basis(basis_num, basis_npix, angle_offset=psa_angle)
@@ -285,7 +296,7 @@ def mueller_state(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None):
     """
 
     # get the PSG and PSA states
-    PSGs, PSAs = psg_psa_states(x0, basis, psg_angles,
+    PSGs, PSAs = psg_psa_states_broadcast(x0, basis, psg_angles,
                                 rotation_ratio=rotation_ratio,
                                 psa_angles=psa_angles)
 
@@ -379,7 +390,7 @@ def make_data_reduction_matrix(x0, basis, psg_angles,
     """
     # get the PSG and PSA states
     if not dual_I:
-        PSGs, PSAs = psg_psa_states(x0, basis, psg_angles,
+        PSGs, PSAs = psg_psa_states_broadcast(x0, basis, psg_angles,
                                     rotation_ratio=rotation_ratio,
                                     psa_angles=psa_angles)
     else:
