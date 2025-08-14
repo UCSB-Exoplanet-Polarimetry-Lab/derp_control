@@ -1,10 +1,14 @@
-from pylablib.devices import Thorlabs
 from .derpy_conf import (
     FOCUS_STAGE_ID,
     PSG_ROTATION_STAGE_ID,
     PSA_ROTATION_STAGE_ID,
     np
 )
+
+try:
+    from pylablib.devices import Thorlabs
+except ImportError:
+    raise ImportError("pylablib not found. Make sure the library is installed and in your PYTHONPATH.")
 
 def print_connected_devices():
     print(Thorlabs.list_kinesis_devices())
