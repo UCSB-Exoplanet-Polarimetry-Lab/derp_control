@@ -676,14 +676,14 @@ def q_continuum_from_experiment(experiment, channel="dual"):
 
 
 # Inherits from github.com/Jashcraf/Spatial_Calibration
-def reduce_data(data, centering='circle', mask=None, bin=None):
+def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0):
     """ Reduces the data by compensating for source fluctuations and aligning images
     using phase cross-correlation.
 
     Parameters
     ----------
     data : dict
-        A dictionary containing the following
+        A dictionary containi1the following
         keys:
         - "images": numpy array of images.
         - "angles": numpy array of angles corresponding to the images.
@@ -717,33 +717,36 @@ def reduce_data(data, centering='circle', mask=None, bin=None):
     reference_channel = data["reference_channel"]
     other_channel = data["other_channel"]
 
+    # Digest the images
+    if  images.dtype != np.float32 or images.dtype != np.float64:
+        images = images.astype(np.float32)
+
     # ensure there aren't negative numbers
     images[images <= 0] = 1
+
+    # Compute the circle fit for the reference frame
+    ref_image = images[reference_frame, reference_channel]
 
 
     # Phase cross-correlation to align the images
     for i, img in enumerate(images):
 
-        # choose the first left or right frame to align to
-        if i == 0:
-            ref_image = images[i, reference_channel]
+        if centering == 'circle':
 
-            if centering == 'circle':
+            # Center the reference image using circle fitting
+            ref_image, shift_px, circle_params = robust_circle_fit(ref_image)
 
-                # Center the reference image using circle fitting
-                ref_image, shift_px, circle_params = robust_circle_fit(ref_image)
+        elif centering == 'com':
+            # Center the reference image using center of mass
+            ref_image = center_beam(ref_image)
+            circle_params = 0
 
-            elif centering == 'com':
-                # Center the reference image using center of mass
-                ref_image = center_beam(ref_image)
-                circle_params = 0
-
-            # If centering is not supported, don't do anything
-            else:
-                # Center the reference image using circle fitting
-                # Get circle params but pass centered img to void register
-                _, shift_px, circle_params = robust_circle_fit(ref_image)
-                pass
+        # If centering is not supported, don't do anything
+        else:
+            # Center the reference image using circle fitting
+            # Get circle params but pass centered img to void register
+            _, shift_px, circle_params = robust_circle_fit(ref_image)
+            pass
 
         # have to do for the left and right channels separately
         if centering is not None:
@@ -769,8 +772,10 @@ def reduce_data(data, centering='circle', mask=None, bin=None):
         if mask is not None:
             img = img * mask
 
-        # 0.5 comes from polarizer transmission
-        set = img / p_ref * 0.5
+        # 1/2 comes from polarizer transmission
+        # NOTE: It is CRITICAL that the divide by 2 is an integer
+        # Otherwise, this returns a zero if img is dtype="uint16"
+        set = img / p_ref / 2
         images[i, 0] = set[0] # [zero_mask]
         images[i, 1] = set[1] # [zero_mask]
 
@@ -780,8 +785,10 @@ def reduce_data(data, centering='circle', mask=None, bin=None):
         binned_images_right = []
         for i, img in enumerate(images):
 
-            binned_images_left.append(bin_array_2d(img[0], bin, method='median'))
-            binned_images_right.append(bin_array_2d(img[1], bin, method='median'))
+            binned_left = bin_array_2d(img[0], bin, method='median')
+            binned_right = bin_array_2d(img[1], bin, method='median')
+            binned_images_left.append(binned_left)
+            binned_images_right.append(binned_right)
 
         images = np.stack([binned_images_left, binned_images_right], axis=0)
 
@@ -793,7 +800,8 @@ def reduce_data(data, centering='circle', mask=None, bin=None):
 
 
 def load_fits_data(measurement_pth, calibration_pth,
-                   dark_pth=None, use_encoder=False, reference_channel="Left"):
+                   dark_pth=None, use_encoder=False, reference_channel="Left",
+                   centering_ref_img=0):
     """load data from .fits file experiments
 
     Parameters
@@ -853,13 +861,13 @@ def load_fits_data(measurement_pth, calibration_pth,
 
         # Subaperture based on the Calibration file
         if key == "Calibration":
-            # selected_areas, selected_coordinates = launch_image_selector(power_measurement[0])
+
             # check to see if there's a path called "image_selection.json"
             if os.path.exists("image_selection.json"):
                 with open("image_selection.json", "r") as f:
                     selected_coordinates = json.load(f)
             else:
-                selected_areas, selected_coordinates = launch_image_selector(power_measurement[0])
+                selected_areas, selected_coordinates = launch_image_selector(power_measurement[centering_ref_img])
                 # Save the selected areas
                 with open("image_selection.json", "w") as f:
                     json.dump(selected_coordinates, f)
