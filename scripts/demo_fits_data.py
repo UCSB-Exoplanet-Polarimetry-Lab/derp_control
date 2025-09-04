@@ -9,7 +9,7 @@ from time import perf_counter
 from astropy.io import fits
 
 import os
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = 'false'
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = 'false'
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -28,16 +28,20 @@ from derpy.mask import (
     create_circular_obscuration
 )
 
-CHANNEL = "Left" # Right, Both
+CHANNEL = "Both" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "Downloads/derp-selected/air_wollaston1deg_intsrphere/calibration_data_2025-07-14_17-20-06.fits"
-DATA_DIR = Path.home() / "Downloads/derp-selected/air_wollaston1deg_intsrphere/measurement_data_2025-07-14_17-32-59.fits"
+CAL_DIR = Path.home() / "derp-selected/air_wollaston1deg_intsrphere/calibration_data_2025-07-14_17-20-06.fits"
+DATA_DIR = Path.home() / "derp-selected/air_wollaston1deg_intsrphere/measurement_data_2025-07-14_17-32-59.fits"
 
 # Measuring air with depolarizer in PSA
-PARENT_DIR = Path.home() / "Downloads/derp-selected/depolarizer_psa_wollaston1deg_intsrphere"
-CAL_DIR = PARENT_DIR / "calibration_data_2025-07-14_18-33-29.fits"
-DATA_DIR = PARENT_DIR / "measurement_data_2025-07-14_18-46-38.fits"
+#PARENT_DIR = Path.home() / "derp-selected/depolarizer_psa_wollaston1deg_intsrphere"
+#CAL_DIR = PARENT_DIR / "calibration_data_2025-07-14_18-33-29.fits"
+#DATA_DIR = PARENT_DIR / "measurement_data_2025-07-14_18-46-38.fits"
+
+# PARENT_DIR = Path.home() / "derp-selected/depolarizer_wollaston1deg_intsrphere"
+# CAL_DIR = PARENT_DIR / "calibration_data_2025-07-14_17-54-19.fits"
+# DATA_DIR = PARENT_DIR / "measurement_data_2025-07-14_18-08-07.fits"
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -73,25 +77,25 @@ elif CHANNEL == 'Right':
 
 elif CHANNEL == 'Both':
     # Concatenate the left, then right frames
-    left_frames = reduced_cal[:, 0]
-    right_frames = reduced_cal[:, 1]
+    left_frames = reduced_cal[0][:24]
+    right_frames = reduced_cal[1][:24]
     true_frames = np.concatenate([left_frames, right_frames])
 
-    left_frames = reduced_exp[:, 0]
-    right_frames = reduced_exp[:, 1]
+    left_frames = reduced_exp[0][24:]
+    right_frames = reduced_exp[1][24:]
     exp_frames = np.concatenate([left_frames, right_frames])
     warn("Channel 'Both' is untested, be wary of results")
 
 
 # Generate polynomials
-NMODES = 512
+NMODES = 37
 NPIX = true_frames.shape[-1]
 
 # Create a mask from the circle parameters
 # TODO: I think these are from circle fitting BEFORE binning, binning should happen first!
 mask = np.zeros((NPIX, NPIX), dtype=int)
 y0, x0 = circle_params['center']
-radius = circle_params['radius'] / 4 # divide by bin amount
+radius = circle_params['radius'] / 1 # divide by bin amount
 
 x = np.arange(-NPIX//2, NPIX//2, dtype=np.float64)
 y, x = np.meshgrid(x, x)
@@ -123,7 +127,6 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
 x0 = np.random.random(2 + 4*NMODES) / 10
-
 # ensures the piston term is quarter-wave to start / also need the second
 x0[2] = np.pi / 2
 x0[2 + NMODES] = np.pi / 2
@@ -136,7 +139,7 @@ basis = create_modal_basis(NMODES, NPIX)
 basis_masked = [i * mask for i in basis]
 mask_extend = mask_extend.astype(np.float64)
 mask_extend[mask_extend==0] = np.nan
-
+cost_function = []
 def loss(x):
 
     if CHANNEL.lower() == "both":
@@ -159,7 +162,7 @@ def loss(x):
     # nanmean is important for masked values
     #MSE = np.sum(mean_array)
     MSE = np.mean(diff_array[mask_extend==1])  # / len(mask[mask==1])
-
+    cost_function.append(MSE.item())
     return MSE
 
 from time import perf_counter
@@ -183,7 +186,14 @@ def callback_function(xk):
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
-                    options={"maxiter":100, "ftol":1e-10, "gtol":1e-10})
+                   options={"maxiter":10e3, "ftol":1e-14, "gtol":1e-14})
+
+plt.figure()
+plt.plot(cost_function)
+plt.yscale("log")
+plt.title("Convergence of Cost Function")
+plt.ylabel("Mean Squared Error")
+plt.xlabel("iterations")
 
 if pbar is not None:
     pbar.close()
@@ -193,11 +203,17 @@ if pbar is not None:
 
 
 # extract the retarder coeffs
-psg_ret_coeffs = results.x[4 : 4+len(basis)]
+psg_ret_coeffs = results.x[2 : 2+len(basis)]
 psg_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked, psg_ret_coeffs)
 
-psa_ret_coeffs = results.x[4+len(basis) : 4 + 2*len(basis)]
+psa_ret_coeffs = results.x[2 + len(basis) : 2 + 2*len(basis)]
 psa_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked, psa_ret_coeffs)
+
+psg_ang_coeffs = results.x[2 + 2 * len(basis) : 2 + 3 * len(basis)]
+psg_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psg_ang_coeffs)
+
+psa_ang_coeffs = results.x[2 + 3 * len(basis) : 2 + 4 * len(basis)]
+psa_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psa_ang_coeffs)
 
 plt.figure()
 plt.subplot(131)
@@ -217,6 +233,24 @@ plt.plot(psg_ret_coeffs, label="PSG coefficients", marker="x")
 plt.plot(psa_ret_coeffs, label="PSA coefficients", marker="x")
 plt.legend()
 
+plt.figure()
+plt.subplot(131)
+plt.title("Estimated PSG Retarder Angle")
+plt.imshow(psg_angle_estimate / mask, cmap="RdBu_r")
+plt.colorbar()
+plt.xticks([], [])
+plt.yticks([], [])
+plt.subplot(132)
+plt.title("Estimated PSA Retarder Angle")
+plt.imshow(psa_angle_estimate / mask, cmap="RdBu_r")
+plt.colorbar()
+plt.xticks([], [])
+plt.yticks([], [])
+plt.subplot(133)
+plt.plot(psg_ret_coeffs, label="PSG coefficients", marker="x")
+plt.plot(psa_ret_coeffs, label="PSA coefficients", marker="x")
+plt.legend()
+
 # Running out of GPU memory oops
 del psg_retarder_estimate, psa_retarder_estimate
 
@@ -226,7 +260,8 @@ if not CHANNEL.lower() == "both":
 else:
     sim_frames = forward_model(results.x, basis_masked, psg_angles,
                                 rotation_ratio=2.5,
-                                dual_I=True)
+                                dual_I=True,
+                                psa_angles=psa_angles)
 
 
 # perform a comparison via mean power
@@ -261,13 +296,15 @@ spatial_cal_results = results.x.copy()
 psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))[24:]
 psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))[24:]
 
-
 if CHANNEL.lower() == "both":
+    #psg_angles_exp = np.concatenate([psg_angles_exp, psg_angles_exp])
+    # psa_angles_exp = np.concatenate([psa_angles_exp, psa_angles_exp])
     Winv = make_data_reduction_matrix(spatial_cal_results,
                                         basis_masked,
                                         psg_angles_exp,
                                         rotation_ratio=2.5,
-                                        dual_I=True)
+                                        dual_I=True,
+                                        psa_angles=psa_angles_exp)
 else:
     Winv = make_data_reduction_matrix(spatial_cal_results,
                                         basis_masked,
@@ -294,30 +331,35 @@ med_M = np.median(M_meas[mask], axis=0)
 var = (med_M - I)**2
 rms = np.sqrt(np.sum(var))
 
-derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix, "+fr"$\sigma={rms:.5f}$", vmin=-1, vmax=1, cmap="RdBu_r")
-
-
-# Plot the retarder
 from katsu.mueller import decompose_depolarizer, retardance_from_mueller
-M_dia = np.zeros_like(M_meas)
-M_ret = np.zeros_like(M_meas)
-M_dep = np.zeros_like(M_meas)
-
-for i in range(M_meas.shape[0]):
-    for j in range(M_meas.shape[1]):
-
-        mdep, mret, mdia = decompose_depolarizer(M_meas[i, j], return_all=True)
-        M_dep = M_dep.at[i, j].set(mdep)
-        M_ret = M_ret.at[i, j].set(mret)
-        M_dia = M_dia.at[i, j].set(mdia)
-
+M_dep, M_ret, M_dia = decompose_depolarizer(M_meas, return_all=True)
 retardance_pupil = retardance_from_mueller(M_ret)
 
+vlim = 5
+
 plt.figure()
-plt.title(f"Retardance Pupil, NMODES={NMODES}, "+fr"$\sigma={np.nanstd(np.degrees(retardance_pupil)):.2f}^\circ$")
-plt.imshow(np.degrees(retardance_pupil), cmap="RdBu_r")
+plt.title(f"Retardance Pupil, NMODES={NMODES}, "+fr"$\sigma={np.nanstd(np.degrees(retardance_pupil)):.5f}^\circ$")
+plt.imshow(np.degrees(retardance_pupil), cmap="RdBu_r", vmin=-vlim, vmax=vlim)
 plt.colorbar(label="Retardance, degrees")
-plt.show()
+derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix, "+fr"$\sigma={rms:.10f}$", vmin=-1, vmax=1, cmap="RdBu_r")
+
+# Plot the retarder
+# Plot the retarder
+# from katsu.mueller import decompose_depolarizer, retardance_from_mueller
+# M_dia = np.zeros_like(M_meas)
+# M_ret = np.zeros_like(M_meas)
+# M_dep = np.zeros_like(M_meas)
+# 
+# for i in range(M_meas.shape[0]):
+#     for j in range(M_meas.shape[1]):
+# 
+#         mdep, mret, mdia = decompose_depolarizer(M_meas[i, j], return_all=True)
+#         M_dep = M_dep.at[i, j].set(mdep)
+#         M_ret = M_ret.at[i, j].set(mret)
+#         M_dia = M_dia.at[i, j].set(mdia)
+# 
+# retardance_pupil = retardance_from_mueller(M_ret)
+# 
 
 WAVELENGTH_SELECT = 1500
 

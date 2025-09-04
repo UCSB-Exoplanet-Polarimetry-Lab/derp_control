@@ -1,5 +1,6 @@
 import numpy as tnp
 import jax.numpy as jnp
+from jax import jit
 import ipdb
 from katsu.katsu_math import np, broadcast_kron
 from katsu.mueller import linear_retarder, linear_polarizer
@@ -76,6 +77,7 @@ def create_modal_basis(num_modes, num_pix, angle_offset=0):
 
     return basis
 
+@jit
 def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, psa_offset=0):
     """
     Constructs the Mueller states for the given parameters, broadcast for more efficient computation.
@@ -107,16 +109,19 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
     psg_pol_angle = x0[0]
     psa_pol_angle = x0[1] + psa_offset
 
-    # split the remaining coefficients into PSG and PSA retarder
-    # if isinstance(psg_wvp_coeffs, jnp.ndarray):
-    #     psg_wvp_coeffs = psg_wvp_coeffs.at[1:].set(0.)
-    # else:
-    #     psg_wvp_coeffs[1:] = 0.
     psg_wvp_coeffs = x0[2 + 0 * len(basis) : 2 + 1 * len(basis)]
     psa_wvp_coeffs = x0[2 + 1 * len(basis) : 2 + 2 * len(basis)]
     psg_ang_coeffs = x0[2 + 2 * len(basis) : 2 + 3 * len(basis)]
     psa_ang_coeffs = x0[2 + 3 * len(basis) : 2 + 4 * len(basis)]
-
+    
+    # # split the remaining coefficients into PSG and PSA retarder
+    # if isinstance(psg_wvp_coeffs, jnp.ndarray):
+    #     psg_wvp_coeffs = psg_wvp_coeffs.at[1:].set(0.)
+    #     psg_ang_coeffs = psg_ang_coeffs.at[1:].set(0.)
+    # else:
+    #     psg_wvp_coeffs[1:] = 0.
+    #     psg_ang_coeffs[1:] = 0.
+    
     # Good to make sure we are splitting the list correctly
     assert len(psg_wvp_coeffs) == len(basis)
     assert len(psa_wvp_coeffs) == len(basis)
@@ -140,59 +145,61 @@ def psg_psa_states_broadcast(x0, basis, psg_angles, rotation_ratio=2.5, psa_angl
     psa_ret = []
     psa_ang = []
 
+    psg_ret = sum_of_2d_modes_wrapper(basis, psg_wvp_coeffs)
+    psa_ret = sum_of_2d_modes_wrapper(basis, psa_wvp_coeffs)
+    
+    psg_ang = sum_of_2d_modes_wrapper(basis, psg_ang_coeffs)
+    psa_ang = sum_of_2d_modes_wrapper(basis, psa_ang_coeffs)
+
     # Build up the retarders
-    for psg, psa in zip(psg_angles, psa_angles):
-
-        # configure the fast axis angle
-        if isinstance(psg_ang_coeffs, jnp.ndarray):
-            psg_ang_coeffs = psg_ang_coeffs.at[0].set(psg)
-            psa_ang_coeffs = psa_ang_coeffs.at[0].set(psa)
-        else:
-            psg_ang_coeffs[0] = psg
-            psa_ang_coeffs[0] = psa
-
-        # construct a new basis
-        basis_psg = create_modal_basis(basis_nmode, basis_npix, angle_offset=psg.item())
-        basis_psa = create_modal_basis(basis_nmode, basis_npix, angle_offset=psa.item())
-
-        psg_ret.append(sum_of_2d_modes_wrapper(basis_psg, psg_wvp_coeffs))
-        psa_ret.append(sum_of_2d_modes_wrapper(basis_psa, psa_wvp_coeffs))
-
-        psg_ang.append(sum_of_2d_modes_wrapper(basis_psg, psg_ang_coeffs))
-        psa_ang.append(sum_of_2d_modes_wrapper(basis_psa, psa_ang_coeffs))
-
-
-    psg_ret = np.asarray(psg_ret)
-    psg_ret = np.moveaxis(psg_ret, 0, -1)
-    psg_ang = np.asarray(psg_ang)
-    psg_ang = np.moveaxis(psg_ang, 0, -1)
-
-    psa_ret = np.asarray(psa_ret)
-    psa_ret = np.moveaxis(psa_ret, 0, -1)
-    psa_ang = np.asarray(psa_ang)
-    psa_ang = np.moveaxis(psa_ang, 0, -1)
-
+#    for psg, psa in zip(psg_angles, psa_angles):
+#        
+#        psg = psg + psg_ang_coeffs[0]
+#        psa = psa + psa_ang_coeffs[0]
+#
+#        # construct a new basis
+#        basis_psg = create_modal_basis(basis_nmode, basis_npix, angle_offset=0*psg.item())
+#        basis_psa = create_modal_basis(basis_nmode, basis_npix, angle_offset=0*psa.item())
+#
+#        psg_ret.append(sum_of_2d_modes_wrapper(basis_psg, psg_wvp_coeffs))
+#        psa_ret.append(sum_of_2d_modes_wrapper(basis_psa, psa_wvp_coeffs))
+#
+#        psg_ang.append(sum_of_2d_modes_wrapper(basis_psg, psg_ang_coeffs))
+#        psa_ang.append(sum_of_2d_modes_wrapper(basis_psa, psa_ang_coeffs))
+#
+#    psg_ret = np.asarray(psg_ret)
+#    psg_ret = np.moveaxis(psg_ret, 0, -1)
+#    psg_ang = np.asarray(psg_ang)
+#    psg_ang = np.moveaxis(psg_ang, 0, -1)
+#
+#    psa_ret = np.asarray(psa_ret)
+#    psa_ret = np.moveaxis(psa_ret, 0, -1)
+#    psa_ang = np.asarray(psa_ang)
+#    psa_ang = np.moveaxis(psa_ang, 0, -1)
+    
     # Npix x Npix x Nangle
-    psg_angles = psg_angles + psg_ang
-    psa_angles = psa_angles + psa_ang
+    psg_angles = psg_angles + psg_ang[..., None]
+    psa_angles = psa_angles + psa_ang[..., None]
+    psg_ret = np.broadcast_to(psg_ret, [psg_angles.shape[-1], *psg_ret.shape])
+    psa_ret = np.broadcast_to(psa_ret, [psa_angles.shape[-1], *psa_ret.shape])
+    psg_ret = np.moveaxis(psg_ret, 0, -1)
+    psa_ret = np.moveaxis(psa_ret, 0, -1)
 
     # Fixed quantity
     psg_pol = linear_polarizer(psg_pol_angle)
     psa_pol = linear_polarizer(psa_pol_angle)
-
+    
     # I believe this rotates
-    psg_wvp = linear_retarder(psg_angles, psg_ret, shape=[*psg_ret.shape])
-    psa_wvp = linear_retarder(psa_angles, psa_ret, shape=[*psa_ret.shape])
+    psg_wvp = linear_retarder(psg_angles, psg_ret, shape=[*psg_angles.shape])
+    psa_wvp = linear_retarder(psa_angles, psa_ret, shape=[*psa_angles.shape])
 
     PSGs = psg_wvp @ psg_pol
     PSAs = psa_pol @ psa_wvp
-    # pack NMEAS dimension appropriately
-    #PSGs = np.moveaxis(PSGs, 0, -3) # skips mueller matrix dimensions
-    #PSAs = np.moveaxis(PSAs, 0, -3)
 
     return PSGs, PSAs
 
-def psg_psa_states(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, psa_offset=0):
+
+def _psg_psa_states(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None, psa_offset=0):
     """
     Constructs the Mueller states for the given parameters
 
@@ -321,12 +328,12 @@ def mueller_state(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None):
 def dual_I_mueller_state(x0, basis, psg_angles, rotation_ratio=2.5, psa_angles=None):
 
     # Left Channel
-    PSGs_L, PSAs_L = psg_psa_states(x0, basis, psg_angles,
+    PSGs_L, PSAs_L = psg_psa_states_broadcast(x0, basis, psg_angles,
                                 rotation_ratio=rotation_ratio,
                                 psa_angles=psa_angles)
 
     # Right Channel analyzer is rotated by 90 deg
-    PSGs_R, PSAs_R = psg_psa_states(x0, basis, psg_angles,
+    PSGs_R, PSAs_R = psg_psa_states_broadcast(x0, basis, psg_angles,
                                 rotation_ratio=rotation_ratio,
                                 psa_angles=psa_angles,
                                 psa_offset=np.radians(90))
@@ -408,12 +415,12 @@ def make_data_reduction_matrix(x0, basis, psg_angles,
                                     psa_angles=psa_angles)
     else:
         # Left Channel
-        PSGs_L, PSAs_L = psg_psa_states(x0, basis, psg_angles,
+        PSGs_L, PSAs_L = psg_psa_states_broadcast(x0, basis, psg_angles,
                                     rotation_ratio=rotation_ratio,
                                     psa_angles=psa_angles)
 
         # Right Channel analyzer is rotated by 90 deg
-        PSGs_R, PSAs_R = psg_psa_states(x0, basis, psg_angles,
+        PSGs_R, PSAs_R = psg_psa_states_broadcast(x0, basis, psg_angles,
                                     rotation_ratio=rotation_ratio,
                                     psa_angles=psa_angles,
                                     psa_offset=np.radians(90))
