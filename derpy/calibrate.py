@@ -9,7 +9,11 @@ from katsu.polarimetry import drrp_data_reduction_matrix
 from prysm.coordinates import make_xy_grid, cart_to_polar
 from prysm.polynomials import noll_to_nm, sum_of_2d_modes
 # from .zernike import zernike_nm_seq
-from prysm.polynomials import zernike_nm_seq
+# Handle different prysm naming
+try:
+    from prysm.polynomials import zernike_nm_seq
+except ImportError:
+    from prysm.polynomials import zernike_nm_sequence as zernike_nm_seq
 
 def jax_sum_of_2d_modes(modes, weights):
     """a clone of prysm.polynomials sum_of_2d_modes that works when using
