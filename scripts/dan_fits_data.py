@@ -98,7 +98,7 @@ y, x = np.meshgrid(x, x)
 r = np.sqrt((y)**2 + (x)**2)
 
 # Using 90% of the radius to account for misregistration at the edges
-mask[r <= radius * .7] = 1
+mask[r <= radius * .9] = 1
 
 # # Mask the artifact from the collimator
 # dot = create_circular_obscuration(mask.shape[0], radius=7, center=(130, 102))
@@ -181,17 +181,23 @@ def callback_function(xk):
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
-                    options={"maxiter":100, "ftol":1e-20, "gtol":1e-20})
+                    options={"maxiter":10000, "ftol":1e-20, "gtol":1e-20})
 
 if pbar is not None:
     pbar.close()
 
 # extract the retarder coeffs
-psg_ret_coeffs = results.x[4 : 4+len(basis)]
+psg_ret_coeffs = results.x[2 : 2+len(basis)]
 psg_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked, psg_ret_coeffs)
 
-psa_ret_coeffs = results.x[4+len(basis) : 4 + 2*len(basis)]
+psa_ret_coeffs = results.x[2 + len(basis) : 2 + 2*len(basis)]
 psa_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked, psa_ret_coeffs)
+
+psg_ang_coeffs = results.x[2 + 2 * len(basis) : 2 + 3 * len(basis)]
+psg_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psg_ang_coeffs)
+
+psa_ang_coeffs = results.x[2 + 3 * len(basis) : 2 + 4 * len(basis)]
+psa_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psa_ang_coeffs)
 
 plt.figure()
 plt.subplot(131)
@@ -203,6 +209,24 @@ plt.yticks([], [])
 plt.subplot(132)
 plt.title("Estimated PSA Retarder")
 plt.imshow(psa_retarder_estimate / mask, cmap="RdBu_r")
+plt.colorbar()
+plt.xticks([], [])
+plt.yticks([], [])
+plt.subplot(133)
+plt.plot(psg_ret_coeffs, label="PSG coefficients", marker="x")
+plt.plot(psa_ret_coeffs, label="PSA coefficients", marker="x")
+plt.legend()
+
+plt.figure()
+plt.subplot(131)
+plt.title("Estimated PSG Retarder Angle")
+plt.imshow(psg_angle_estimate / mask, cmap="RdBu_r")
+plt.colorbar()
+plt.xticks([], [])
+plt.yticks([], [])
+plt.subplot(132)
+plt.title("Estimated PSA Retarder Angle")
+plt.imshow(psa_angle_estimate / mask, cmap="RdBu_r")
 plt.colorbar()
 plt.xticks([], [])
 plt.yticks([], [])
@@ -284,11 +308,11 @@ M_meas /= M_meas[..., 0, 0, None, None]
 # Get the RMS of data within mask
 I = np.eye(4)
 
-med_M = np.median(M_meas[mask], axis=0)
+med_M = np.nanmedian(M_meas[mask], axis=0)
 var = (med_M - I)**2
 rms = np.sqrt(np.sum(var))
 
-derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix, "+fr"$\sigma={rms:.5f}$", vmin=-1, vmax=1, cmap="RdBu_r")
+derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix, "+f"{np.nanmean(med_M):.5f}" + r"$\pm$ " + f"{rms:.5f}", vmin=-1, vmax=1, cmap="RdBu_r")
 
 
 # Plot the retarder
@@ -308,7 +332,7 @@ for i in range(M_meas.shape[0]):
 retardance_pupil = retardance_from_mueller(M_ret)
 
 plt.figure()
-plt.title(f"Retardance Pupil, NMODES={NMODES}, "+fr"$\sigma={np.nanstd(np.degrees(retardance_pupil)):.2f}^\circ$")
+plt.title(f"Retardance Pupil, NMODES={NMODES}, "+fr"${np.nanmean(np.degrees(retardance_pupil))} \pm {np.nanstd(np.degrees(retardance_pupil)):.2f}^\circ$")
 plt.imshow(np.degrees(retardance_pupil), cmap="RdBu_r")
 plt.colorbar(label="Retardance, degrees")
 plt.show()
