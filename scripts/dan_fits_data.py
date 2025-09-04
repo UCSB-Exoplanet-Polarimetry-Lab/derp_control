@@ -28,11 +28,11 @@ from derpy.mask import (
     create_circular_obscuration
 )
 
-CHANNEL = "Left" # Right, Both
+CHANNEL = "Both" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "Downloads/JPL_image_cube_250801_084230.fits"
-DATA_DIR = Path.home() / "Downloads/JPL_image_cube_250801_085136.fits"
+CAL_DIR = Path.home() / "dans_data/JPL_image_cube_250801_084230.fits"
+DATA_DIR = Path.home() / "dans_data/JPL_image_cube_250801_085136.fits"
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -74,12 +74,12 @@ elif CHANNEL == 'Right':
 
 elif CHANNEL == 'Both':
     # Concatenate the left, then right frames
-    left_frames = reduced_cal[:, 0]
-    right_frames = reduced_cal[:, 1]
+    left_frames = reduced_cal[0]
+    right_frames = reduced_cal[1]
     true_frames = np.concatenate([left_frames, right_frames])
 
-    left_frames = reduced_exp[:, 0]
-    right_frames = reduced_exp[:, 1]
+    left_frames = reduced_exp[0]
+    right_frames = reduced_exp[1]
     exp_frames = np.concatenate([left_frames, right_frames])
     warn("Channel 'Both' is untested, be wary of results")
 
@@ -231,8 +231,8 @@ plt.colorbar()
 plt.xticks([], [])
 plt.yticks([], [])
 plt.subplot(133)
-plt.plot(psg_ret_coeffs, label="PSG coefficients", marker="x")
-plt.plot(psa_ret_coeffs, label="PSA coefficients", marker="x")
+plt.plot(psg_ang_coeffs, label="PSG coefficients", marker="x")
+plt.plot(psa_ang_coeffs, label="PSA coefficients", marker="x")
 plt.legend()
 
 # Running out of GPU memory oops
@@ -245,7 +245,8 @@ if not CHANNEL.lower() == "both":
 else:
     sim_frames = forward_model(results.x, basis_masked, psg_angles,
                                 rotation_ratio=2.5,
-                                dual_I=True)
+                                dual_I=True,
+                                psa_angles=psa_angles)
 
 
 # perform a comparison via mean power
@@ -285,7 +286,8 @@ if CHANNEL.lower() == "both":
                                         basis_masked,
                                         psg_angles_exp,
                                         rotation_ratio=2.5,
-                                        dual_I=True)
+                                        dual_I=True,
+                                        psa_angles=psa_angles_exp)
 else:
     Winv = make_data_reduction_matrix(spatial_cal_results,
                                         basis_masked,
