@@ -4,22 +4,35 @@ version = "0.1.0"
 description = "Pythonic control for Dual-rotating-retarder Mueller polarimeters"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {file = "LICENSE.md"}
+license = { file = "LICENSE.md" }
 authors = [
-	{name = "Jaren N. Ashcraft", email="jarenashcraft@ucsb.edu"},
-	{name = "William Melby", email="wcmelby@ucsb.edu"},
-	{name = "Rebecca Zhang", email="manxuanzhang@ucsb.edu"},
-	{name = "Ronald Lopez", email="ronlopez@ucsb.edu"},
-	{name = "Briley Lewis", email="brileylewis@ucsb.edu"},
-	{name = "Ryan Hersey", email="rhersey@ucsb.edu"},
-	{name = "Courtney Duong"},
-	{name = "Andy Zhou"},
+    { name = "Jaren N. Ashcraft", email = "jarenashcraft@ucsb.edu" },
+    { name = "William Melby", email = "wcmelby@ucsb.edu" },
+    { name = "Rebecca Zhang", email = "manxuanzhang@ucsb.edu" },
+    { name = "Ronald Lopez", email = "ronlopez@ucsb.edu" },
+    { name = "Briley Lewis", email = "brileylewis@ucsb.edu" },
+    { name = "Ryan Hersey", email = "rhersey@ucsb.edu" },
+    { name = "Courtney Duong" },
+    { name = "Andy Zhou" },
 ]
 
 keywords = ["mueller", "polarimetry", "data reduction", "hardware"]
-dependencies = ["numpy", "scipy", "pylablib", "tqdm", "matplotlib",
-				"katsu", "configobj", "msgpack", "msgpack_numpy",
-				"astropy"]
+dependencies = [
+    "numpy",
+    "scipy",
+    "pylablib",
+    "tqdm",
+    "matplotlib",
+    "katsu",
+    "configobj",
+    "msgpack",
+    "msgpack_numpy",
+    "astropy",
+    "scikit-image",
+    "ipdb",
+    "jax",
+    "prysm",
+]
 
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -35,6 +48,4 @@ where = ["."]
 include = ["derpy"]
 
 [tool.pytest.ini_options]
-pythonpath = [
-	"."
-]
+pythonpath = ["."]

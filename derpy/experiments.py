@@ -115,6 +115,7 @@ class Experiment:
             self.images = np.zeros([len(self.wavelengths), n_steps, 2, 2*cut, 2*cut])
             self.mean_power_left = np.zeros([len(self.wavelengths), n_steps])
             self.mean_power_right = np.zeros([len(self.wavelengths), n_steps])
+            self.raws = np.zeros([len(self.wavelengths), n_steps, *self.dark.shape])
         
         else:
             self.images = []
@@ -147,6 +148,7 @@ class Experiment:
                         self.laser.set_channel(channel, wvl, power)
                     
                     img = self.cam.take_median_image(n_imgs)
+                    self.raws[j, i] = img
                     if hasattr(self, 'dark'):
                         img -= self.dark
                         img[img < 0] = 1e-10

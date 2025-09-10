@@ -5,8 +5,11 @@ PSA_ROTATION_STAGE_ID = 55344714
 PSG_ROTATION_STAGE_ID = 55346494
 CRED2_CAMERA_INDEX = 0
 CAMERA_TEMP_READOUT_DELAY = 8 # s
+ZABER_PORT = "COM4"
 
 VERBOSE = True
+
+FLI_SDK_PTH = "C:\\Program Files\\FirstLightImaging\\FliSdk\\Python\\lib"
 
 
 class BackendShim:
@@ -16,7 +19,7 @@ class BackendShim:
 
     def __init__(self, src):
         self._srcmodule = src
- 
+
     def __getattr__(self, key):
         if key == "_srcmodule":
             return self._srcmodule
