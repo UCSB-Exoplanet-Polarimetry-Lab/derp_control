@@ -31,8 +31,15 @@ from derpy.mask import (
 CHANNEL = "Both" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "Data/calibration_data_2025-09-18_16-09-24.fits"
-DATA_DIR = Path.home() / "Data/measurement_data_2025-09-18_16-24-34.fits"
+CAL_DIR = Path.home() / "Data/microscope_objective" \
+/ "calibration_data_2025-09-18_16-09-24.fits"
+
+DATA_DIR = Path.home() / "Data/micrcoscope_objective" \
+/ "measurement_data_2025-09-18_16-24-34.fits"
+
+hdu = fits.open(CAL_DIR)
+print(hdu.info())
+ipdb.set_trace()
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
