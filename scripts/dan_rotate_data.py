@@ -49,6 +49,12 @@ DATA_DIR = Path.home() / "dans_data/JPL_image_cube_250801_085136.fits"
 # DATA_DIR = Path.home() / "dans_data/Capture_AxoStandard_250912_143641.fits"
 # CAL_DIR = Path.home() / "dans_data/Capture_AxoStandard_Air_250912_153842.fits"
 
+# The rotation experiments
+DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_251006_143208.fits"
+CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_251006_142259.fits"
+
+DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_WollastonRotated_251006_144621.fits"
+CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_WollastonRotated_251006_145532.fits"
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -57,7 +63,7 @@ loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   centering_ref_img=10)
 
 # Reduce the data
-binsize = 2
+binsize = 4
 out = loaded_data["Calibration"]
 out_exp = loaded_data["Measurement"]
 reduced_cal, circle_params = derp.reduce_data(out,
@@ -101,7 +107,7 @@ elif CHANNEL == 'Both':
     warn("Channel 'Both' is untested, be wary of results")
 
 # Generate polynomials
-NMODES = 1
+NMODES = 37
 NPIX = true_frames.shape[-1]
 
 # Create a mask from the circle parameters
@@ -138,13 +144,13 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(2 + 7*NMODES) / 10
+x0 = np.random.random(2 + 7*NMODES) / 100
 
 # ensures the piston term is quarter-wave to start / also need the second
 x0[2] = np.pi / 2
 x0[2 + 1*NMODES] = np.pi / 2
 
-# x0[2 + 4*NMODES] = 1 # PSA is a polarizer
+x0[2 + 4*NMODES] = 0 # PSA is a polarizer
 # x0[2 + 4*NMODES+1:] = 0
 psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
 psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
@@ -227,15 +233,15 @@ def loss(x):
     return MSE
 
 from time import perf_counter
-# t1 = perf_counter()
-# _ = loss(x0)
-# print(f"Time taken for forward model: {perf_counter() - t1:.2f} seconds")
+t1 = perf_counter()
+_ = loss(x0)
+print(f"Time taken for forward model: {perf_counter() - t1:.2f} seconds")
 
-# loss_rev = jacrev(loss)
+loss_rev = jacrev(loss)
 loss_fg = value_and_grad(loss)
-# t1 = perf_counter()
-# _ = loss_rev(x0)
-# print(f"Time taken for reverse model: {perf_counter() - t1:.2f} seconds")
+t1 = perf_counter()
+_ = loss_rev(x0)
+print(f"Time taken for reverse model: {perf_counter() - t1:.2f} seconds")
 
 # Callback at every function initialization
 pbar = None # Initialize pbar globally or pass it as an argument
@@ -247,10 +253,13 @@ def callback_function(xk):
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
-                    options={"maxiter":100000, "ftol":1e-20, "gtol":1e-20})
+                   options={"maxiter":100_000, "ftol":1e-20, "gtol":1e-20,
+                            "maxfun":100_000})
 
 if pbar is not None:
     pbar.close()
+
+print(results.message)
 
 # extract the retarder coeffs
 psg_ret_coeffs = results.x[2 : 2+len(basis)]
