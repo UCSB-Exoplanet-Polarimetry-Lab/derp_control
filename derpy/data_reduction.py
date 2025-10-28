@@ -716,6 +716,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
     powers_total = data["powers_total"]
     reference_channel = data["reference_channel"]
     other_channel = data["other_channel"]
+    use_photodiode = data["use_photodiode"]
 
     # Digest the images
     if  images.dtype != np.float32 or images.dtype != np.float64:
@@ -725,7 +726,11 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
     images[images <= 0] = 1
 
     # Compute the circle fit for the reference frame
-    ref_image = images[reference_frame, reference_channel]
+    print("images shape", images.shape)
+    if not use_photodiode:
+        ref_image = images[reference_frame, reference_channel]
+    else:
+        ref_image = images[reference_frame]
 
 
     # Phase cross-correlation to align the images
@@ -750,50 +755,83 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
 
         # have to do for the left and right channels separately
         if centering is not None:
-            for channel in range(2):
+            if not use_photodiode:
+                for channel in range(2):
 
-                # Calculate the shift between the current image and the reference image
+                    # Calculate the shift between the current image and the reference image
+                    shift_y, shift_x = phase_cross_correlation(ref_image,
+                                                            images[i, channel],
+                                                            upsample_factor=10)[0]
+
+                    # Apply the shift to the current image
+                    images[i, channel] = shift(images[i, channel], shift=(shift_y, shift_x), mode='wrap')
+            else:
                 shift_y, shift_x = phase_cross_correlation(ref_image,
-                                                        images[i, channel],
+                                                        images[i],
                                                         upsample_factor=10)[0]
 
-                # Apply the shift to the current image
-                images[i, channel] = shift(images[i, channel], shift=(shift_y, shift_x), mode='wrap')
-
+                # apply shift to current image
+                images[i] = shift(images[i], shift=(shift_y, shift_x), mode='wrap')
+    
     # Perform power normalization now that frames are co-registered
-    images = np.swapaxes(images, 0, 1)
-    for i, img in enumerate(images):
-
-        p_ref = img[0] + img[1]  # total power in the frame
-        zero_mask = np.ones_like(p_ref, dtype=bool)
-        zero_mask[p_ref <= 1e-5] = False
-
-        # Apply the mask to the image
-        if mask is not None:
-            img = img * mask
-
-        # 1/2 comes from polarizer transmission
-        # NOTE: It is CRITICAL that the divide by 2 is an integer
-        # Otherwise, this returns a zero if img is dtype="uint16"
-        set = img / p_ref / 2
-        images[i, 0] = set[0] # [zero_mask]
-        images[i, 1] = set[1] # [zero_mask]
-
-    # Bin the image if binning is specified
-    if bin is not None:
-        binned_images_left = []
-        binned_images_right = []
+    if not use_photodiode:
+        images = np.swapaxes(images, 0, 1)
         for i, img in enumerate(images):
 
-            binned_left = bin_array_2d(img[0], bin, method='median')
-            binned_right = bin_array_2d(img[1], bin, method='median')
-            binned_images_left.append(binned_left)
-            binned_images_right.append(binned_right)
+            p_ref = img[0] + img[1]  # total power in the frame
+            zero_mask = np.ones_like(p_ref, dtype=bool)
+            zero_mask[p_ref <= 1e-5] = False
 
-        images = np.stack([binned_images_left, binned_images_right], axis=0)
+            # Apply the mask to the image
+            if mask is not None:
+                img = img * mask
 
+            # 1/2 comes from polarizer transmission
+            # NOTE: It is CRITICAL that the divide by 2 is an integer
+            # Otherwise, this returns a zero if img is dtype="uint16"
+            set = img / p_ref / 2
+            images[i, 0] = set[0] # [zero_mask]
+            images[i, 1] = set[1] # [zero_mask]
     else:
-        images = np.swapaxes(images, 0, 1)
+        for i, img in enumerate(images):
+
+            p_ref = powers_total[i]
+            zero_mask = np.ones_like(p_ref, dtype=bool)
+            zero_mask[p_ref <= 1e-5] = False
+
+            # apply image mask
+            if mask is not None:
+                img = img * mask
+
+            set = img / p_ref / 2
+            images[i] = set
+    # Bin the image if binning is specified
+    if not use_photodiode:
+        if bin is not None:
+            binned_images_left = []
+            binned_images_right = []
+            for i, img in enumerate(images):
+
+                binned_left = bin_array_2d(img[0], bin, method='median')
+                binned_right = bin_array_2d(img[1], bin, method='median')
+                binned_images_left.append(binned_left)
+                binned_images_right.append(binned_right)
+
+            images = np.stack([binned_images_left, binned_images_right], axis=0)
+
+        else:
+            images = np.swapaxes(images, 0, 1)
+    
+    # only need to bin left
+    else:
+        if bin is not None:
+            binned_images_left = []
+            for i, img in enumerate(images):
+
+                binned_left = bin_array_2d(img, bin, method='median')
+                binned_images_left.append(binned_left)
+
+            images = np.asarray(binned_images_left)
 
     # returns centered images
     return images, circle_params
@@ -801,7 +839,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
 
 def load_fits_data(measurement_pth, calibration_pth,
                    dark_pth=None, use_encoder=False, reference_channel="Left",
-                   centering_ref_img=0):
+                   centering_ref_img=0, use_photodiode=False):
     """load data from .fits file experiments
 
     Parameters
@@ -867,25 +905,36 @@ def load_fits_data(measurement_pth, calibration_pth,
                 with open("image_selection.json", "r") as f:
                     selected_coordinates = json.load(f)
             else:
-                selected_areas, selected_coordinates = launch_image_selector(power_measurement[centering_ref_img])
+                selected_areas, selected_coordinates = launch_image_selector(power_measurement[centering_ref_img], use_photodiode)
                 # Save the selected areas
                 with open("image_selection.json", "w") as f:
                     json.dump(selected_coordinates, f)
 
+        # Use Wollaston for power tracking, requires both frames
+        if not use_photodiode:
+            x1, y1, x2, y2 = selected_coordinates[0]
+            images_left = power_measurement[..., y1:y2, x1:x2]
+            powers_left = np.median(images_left, axis=(1, 2))
 
-        x1, y1, x2, y2 = selected_coordinates[0]
-        images_left = power_measurement[..., y1:y2, x1:x2]
-        powers_left = np.median(images_left, axis=(1, 2))
+            x1, y1, x2, y2 = selected_coordinates[1]
+            images_right = power_measurement[..., y1:y2, x1:x2]
+            powers_right = np.median(images_right, axis=(1, 2))
 
-        x1, y1, x2, y2 = selected_coordinates[1]
-        images_right = power_measurement[..., y1:y2, x1:x2]
-        powers_right = np.median(images_right, axis=(1, 2))
-
-        # There should be some frame filtering here
-        good_powers_right = powers_right
-        good_powers_left = powers_left
-        good_powers_total = powers_right + powers_left
-        good_images = np.array([images_left, images_right])
+            # There should be some frame filtering here
+            good_powers_right = powers_right
+            good_powers_left = powers_left
+            good_powers_total = powers_right + powers_left
+            good_images = np.array([images_left, images_right])
+        
+        # Use photodiode for power tracking, only pulls frame on left
+        else:
+            x1, y1, x2, y2 = selected_coordinates[0]
+            good_images = power_measurement[..., y1:y2, x1:x2]
+            good_powers_left = np.median(good_images, axis=(1, 2))
+            good_powers_right = None
+            
+            # Load the photodiode, median first dimension
+            good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
 
         if not use_encoder:
             psg_angles = measurement["PSG_COMMAND_ANGLES"]
@@ -893,6 +942,7 @@ def load_fits_data(measurement_pth, calibration_pth,
         else:
             psg_angles = measurement["PSG_ENCODER_ANGLES"]
             psa_angles = measurement["PSA_ENCODER_ANGLES"]
+        
 
         experiment_data = {
             "images": good_images,
@@ -902,7 +952,8 @@ def load_fits_data(measurement_pth, calibration_pth,
             "powers_right": good_powers_right,
             "powers_total": good_powers_total,
             "reference_channel": reference_channel,
-            "other_channel": other_channel
+            "other_channel": other_channel,
+            "use_photodiode": use_photodiode
         }
 
         drrp_raw_data[key] = experiment_data

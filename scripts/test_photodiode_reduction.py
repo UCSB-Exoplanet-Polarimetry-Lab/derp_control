@@ -28,24 +28,24 @@ from derpy.mask import (
     create_circular_obscuration
 )
 
-CHANNEL = "Both" # Right, Both
+CHANNEL = "Left" # Right, Both
 
 # Just measuring air
 CAL_DIR = Path.home() / "Data/microscope_objective" \
 / "calibration_data_2025-09-18_16-09-24.fits"
 
-DATA_DIR = Path.home() / "Data/micrcoscope_objective" \
+DATA_DIR = Path.home() / "Data/microscope_objective" \
 / "measurement_data_2025-09-18_16-24-34.fits"
 
 hdu = fits.open(CAL_DIR)
 print(hdu.info())
-ipdb.set_trace()
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   calibration_pth=CAL_DIR,
-                                  use_encoder=False,
-                                  centering_ref_img=2)
+                                  use_encoder=True,
+                                  centering_ref_img=2,
+                                  use_photodiode=True)
 
 
 # Reduce the data
@@ -60,37 +60,10 @@ reduced_exp, circle_params_exp = derp.reduce_data(out_exp,
                                                   bin=2)
 
 # Extract which channel we are operating on
-if CHANNEL == 'Left':
-    # true_frames = reduced_cal[:, 0]
-    # exp_frames = reduced_exp[:, 0]
-    true_frames = reduced_cal[0]
-    exp_frames = reduced_exp[0]
-
-    # get in orientation spatial calibration likes
-    # true_frames = np.moveaxis(true_frames,0, -1)
-    # exp_frames = np.moveaxis(exp_frames, 0, -1)
-
-elif CHANNEL == 'Right':
-    # true_frames = reduced_cal[:, 1]
-    # exp_frames = reduced_exp[:, 1]
-    true_frames = reduced_cal[1]
-    exp_frames = reduced_exp[1]
-
-    # get in orientation spatial calibration likes
-    # true_frames = np.moveaxis(true_frames,0, -1)
-    # exp_frames = np.moveaxis(exp_frames, 0, -1)
-
-elif CHANNEL == 'Both':
-    # Concatenate the left, then right frames
-    left_frames = reduced_cal[0]
-    right_frames = reduced_cal[1]
-    true_frames = np.concatenate([left_frames, right_frames])
-
-    left_frames = reduced_exp[0]
-    right_frames = reduced_exp[1]
-    exp_frames = np.concatenate([left_frames, right_frames])
-    warn("Channel 'Both' is untested, be wary of results")
-
+true_frames = reduced_cal
+exp_frames = reduced_exp
+print(f"reduced_cal shape = {reduced_cal.shape}")
+print(f"reduced_exp shape = {reduced_exp.shape}")
 # Generate polynomials
 NMODES = 1
 NPIX = true_frames.shape[-1]
@@ -114,14 +87,15 @@ mask[r <= radius * .9] = 1
 # mask *= dot
 # mask = mask.astype(bool) # need float to use nans
 mask[mask < 1e-10] = 0
-mask_extend = [mask for i in range(true_frames.shape[0])]
-mask_extend = np.asarray(mask_extend)
-mask_extend = np.moveaxis(mask_extend, 0, -1)
 
 # Apply the mask to the true frames
+print(f"true frames shape after initial creation = {true_frames.shape}")
 true_frames_masked = [i * mask for i in true_frames]
 true_frames = np.asarray(true_frames_masked)
+print(f"true frames shape after masking = {true_frames.shape}")
 true_frames = np.moveaxis(true_frames, 0, -1)
+print(f"true frames shape after switcheroo = {true_frames.shape}")
+
 
 exp_frames_masked = [i * mask for i in exp_frames]
 exp_frames = np.asarray(exp_frames_masked)
@@ -130,42 +104,42 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(2 + 4*NMODES) / 10
+x0 = np.random.random(2 + 7*NMODES) / 10
 
 # ensures the piston term is quarter-wave to start / also need the second
 x0[2] = np.pi / 2
 x0[2 + 1*NMODES] = np.pi / 2
 psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
 psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
-
 set_backend_to_jax()
 
 from derpy.calibrate import forward_model
 
 basis = create_modal_basis(NMODES, NPIX)
 basis_masked = [i * mask for i in basis]
-mask_extend = mask_extend.astype(np.float64)
-mask_extend[mask_extend==0] = np.nan
 
+basis_masked = np.asarray(basis_masked)
+print(f"basis shape = {basis_masked.shape}")
 def loss(x):
-
+    print(psg_angles)
     if CHANNEL.lower() == "both":
-        sim_frames = forward_model(x, basis_masked, psg_angles,
+        sim_frames = forward_model(x, basis_masked, basis_masked, psg_angles,
                                     dual_I=True,
                                     psa_angles=psa_angles)
     else:
-        sim_frames = forward_model(x, basis_masked, psg_angles,
+        sim_frames = forward_model(x, basis_masked, basis_masked, psg_angles,
                                     dual_I=False,
                                     psa_angles=psa_angles)
 
-
+    
     sim_array = np.asarray(sim_frames)
     true_array = np.asarray(true_frames)
+    print(sim_array[mask].shape)
     diff_array = (sim_array - true_array)**2
     diff_array = np.abs(sim_array - true_array)**2
 
     # nanmean is important for masked values
-    MSE = np.mean(diff_array[mask_extend==1])
+    MSE = np.mean(diff_array[mask==1])
     return MSE
 
 from time import perf_counter
@@ -175,6 +149,7 @@ from time import perf_counter
 
 # loss_rev = jacrev(loss)
 loss_fg = value_and_grad(loss)
+_ = loss(x0)
 # t1 = perf_counter()
 # _ = loss_rev(x0)
 # print(f"Time taken for reverse model: {perf_counter() - t1:.2f} seconds")
@@ -247,14 +222,8 @@ plt.legend()
 del psg_retarder_estimate, psa_retarder_estimate
 
 # create simulated power
-if not CHANNEL.lower() == "both":
-    sim_frames = forward_model(results.x, basis_masked, psg_angles,
-                               psa_angles=psa_angles)
-else:
-    sim_frames = forward_model(results.x, basis_masked, psg_angles,
-                                rotation_ratio=2.5,
-                                dual_I=True,
-                                psa_angles=psa_angles)
+sim_frames = forward_model(results.x, basis_masked, basis_masked, psg_angles,
+                           psa_angles=psa_angles)
 
 
 # perform a comparison via mean power

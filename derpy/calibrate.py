@@ -121,7 +121,7 @@ def psg_psa_states_broadcast(x0, basis_psg, basis_psa, psg_angles, rotation_rati
     # extract the front elements that contain the polarizer angles
     psg_pol_angle = x0[0]
     psa_pol_angle = x0[1] + psa_offset
-    nmodes = basis_psg.shape[1]
+    nmodes = basis_psg.shape[0]
     psg_wvp_coeffs = x0[2 + 0 * nmodes : 2 + 1 * nmodes]
     psa_wvp_coeffs = x0[2 + 1 * nmodes : 2 + 2 * nmodes]
     psg_ang_coeffs = x0[2 + 2 * nmodes : 2 + 3 * nmodes]

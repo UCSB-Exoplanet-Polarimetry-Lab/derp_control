@@ -4,10 +4,11 @@ from katsu.katsu_math import np
 from PIL import Image, ImageTk
 
 class ImageSquareSelector:
-    def __init__(self, root, image_array):
+    def __init__(self, root, image_array, use_photodiode):
         self.root = root
         self.root.title("Image Square Selector - Select Two Regions")
         self.root.geometry("800x600")
+        self.use_photodiode = use_photodiode
 
         # Variables
         self.image_array = image_array
@@ -146,32 +147,32 @@ class ImageSquareSelector:
             else:
                 return np.zeros_like(array, dtype=np.uint8)
 
-    def load_image(self):
-        file_path = filedialog.askopenfilename(
-            title="Select Image",
-            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.tiff")]
-        )
-
-        if file_path:
-            try:
-                # Load image with PIL
-                self.image = Image.open(file_path)
-                self.photo = ImageTk.PhotoImage(self.image)
-
-                # Clear canvas and display image
-                self.canvas.delete("all")
-                self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
-
-                # Update canvas scroll region
-                self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-                # Create initial squares
-                self.create_squares()
-                self.status_var.set("Drag the red and blue squares to select two regions")
-
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load image: {str(e)}")
-
+#     def load_image(self):
+#         file_path = filedialog.askopenfilename(
+#             title="Select Image",
+#             filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp *.tiff")]
+#         )
+# 
+#         if file_path:
+#             try:
+#                 # Load image with PIL
+#                 self.image = Image.open(file_path)
+#                 self.photo = ImageTk.PhotoImage(self.image)
+# 
+#                 # Clear canvas and display image
+#                 self.canvas.delete("all")
+#                 self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
+# 
+#                 # Update canvas scroll region
+#                 self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+# 
+#                 # Create initial squares
+#                 self.create_squares()
+#                 self.status_var.set("Drag the red and blue squares to select two regions")
+# 
+#             except Exception as e:
+#                 messagebox.showerror("Error", f"Failed to load image: {str(e)}")
+# 
     def load_image(self):
         file_path = filedialog.askopenfilename(
             title="Select Image",
@@ -224,15 +225,16 @@ class ImageSquareSelector:
             x1, y1, x1 + self.square_size, y1 + self.square_size,
             outline='red', width=3, fill='', tags="square1"
         )
+        
+        if not self.use_photodiode:
+            # Create second square (blue) at center-right
+            x2 = self.canvas.canvasx(350)
+            y2 = self.canvas.canvasy(200)
 
-        # Create second square (blue) at center-right
-        x2 = self.canvas.canvasx(350)
-        y2 = self.canvas.canvasy(200)
-
-        self.square2_id = self.canvas.create_rectangle(
-            x2, y2, x2 + self.square_size, y2 + self.square_size,
-            outline='blue', width=3, fill='', tags="square2"
-        )
+            self.square2_id = self.canvas.create_rectangle(
+                x2, y2, x2 + self.square_size, y2 + self.square_size,
+                outline='blue', width=3, fill='', tags="square2"
+            )
 
     def start_drag(self, event):
         # Check which square is being clicked
@@ -271,21 +273,25 @@ class ImageSquareSelector:
             messagebox.showerror("Error", "No image array provided")
             return
 
-        if self.square1_id is None or self.square2_id is None:
-            messagebox.showerror("Error", "Both squares must be present")
-            return
+        # if self.square1_id is None or self.square2_id is None:
+        #     messagebox.showerror("Error", "Both squares must be present")
+        #     return
 
         try:
             # Get coordinates for both squares
             coords1 = self.canvas.coords(self.square1_id)
-            coords2 = self.canvas.coords(self.square2_id)
+            coords_list = [coords1]
+            
+            if not self.use_photodiode:
+                coords2 = self.canvas.coords(self.square2_id)
+                coords_list.append(coords2)
 
             img_height, img_width = self.image_array.shape[:2]
             selected_areas = []
             selected_coordinates = []
 
             # Process both squares
-            for i, coords in enumerate([coords1, coords2], 1):
+            for i, coords in enumerate(coords_list):
 
                 x1, y1, x2, y2 = coords
 
@@ -322,10 +328,10 @@ class ImageSquareSelector:
         """Returns both selected areas as a list of numpy arrays"""
         return self.selected_areas, self.selected_coordinates
 
-def launch_image_selector(image_array):
+def launch_image_selector(image_array, use_photodiode):
     """Main function to launch the GUI with a numpy array"""
     root = tk.Tk()
-    app = ImageSquareSelector(root, image_array)
+    app = ImageSquareSelector(root, image_array, use_photodiode)
     root.mainloop()
     return app.get_selected_areas()
 
