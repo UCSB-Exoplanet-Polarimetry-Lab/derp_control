@@ -799,8 +799,9 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             if mask is not None:
                 img = img * mask
 
-            set = img * p_ref / p_ref_0 / 2
+            set = img * p_ref / p_ref_0 / 2 / images[0]
             images[i] = set
+
     # Bin the image if binning is specified
     if not use_photodiode:
         if bin is not None:
