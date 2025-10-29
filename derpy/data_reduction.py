@@ -65,7 +65,6 @@ def _measure_from_experiment(experiment, channel="both", frame_mask=None,
             images = []
 
         unmasked_images = experiment.images
-        print("nominal experiment image shape = ",unmasked_images.shape)
         images = []
         psg_angles = []
         psa_angles = []
@@ -87,7 +86,6 @@ def _measure_from_experiment(experiment, channel="both", frame_mask=None,
         psa_angles = np.array(psa_angles)
         images = np.array(images)
         images = np.swapaxes(images, 0, 1)
-        print("post_mask experiment image shape = ",images.shape)
 
     else:
         images = experiment.images
@@ -228,7 +226,6 @@ def _measure_from_experiment(experiment, channel="both", frame_mask=None,
     power = np.asarray(power)
 
     shapes = [*power.shape[-2:], psa_angles.shape[0]]
-    print("shapes", shapes)
     shapes_half = [*power.shape[-2:], psa_angles.shape[0]//2]
     power = np.moveaxis(power,0,-1)
 
@@ -347,7 +344,6 @@ def _measure_from_experiment_old(experiment, channel="both", frame_mask=None):
     # Try out bright-normalized on the left image
     else:
 
-        print("image shape = ", np.asarray(images).shape)
 
         for i, img in enumerate(images):
             cut_left = img[0]
@@ -726,7 +722,6 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
     images[images <= 0] = 1
 
     # Compute the circle fit for the reference frame
-    print("images shape", images.shape)
     if not use_photodiode:
         ref_image = images[reference_frame, reference_channel]
     else:
@@ -793,6 +788,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             images[i, 0] = set[0] # [zero_mask]
             images[i, 1] = set[1] # [zero_mask]
     else:
+        p_ref_0 = powers_total[0]
         for i, img in enumerate(images):
 
             p_ref = powers_total[i]
@@ -803,7 +799,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             if mask is not None:
                 img = img * mask
 
-            set = img / p_ref / 2
+            set = img * p_ref / p_ref_0 / 2
             images[i] = set
     # Bin the image if binning is specified
     if not use_photodiode:

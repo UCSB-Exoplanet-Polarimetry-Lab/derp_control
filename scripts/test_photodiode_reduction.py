@@ -38,7 +38,6 @@ DATA_DIR = Path.home() / "Data/microscope_objective" \
 / "measurement_data_2025-09-18_16-24-34.fits"
 
 hdu = fits.open(CAL_DIR)
-print(hdu.info())
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -47,6 +46,16 @@ loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   centering_ref_img=2,
                                   use_photodiode=True)
 
+
+# plot the photodiode power
+photodiode_observed = loaded_data["Calibration"]["powers_total"]
+p_ref_0 = photodiode_observed[0]
+plt.figure()
+plt.title("Photodiode Measurements")
+plt.plot(photodiode_observed / p_ref_0)
+plt.ylabel("Power, normalized to first measurement")
+plt.xlabel("Measurement index")
+plt.show()
 
 # Reduce the data
 out = loaded_data["Calibration"]
@@ -62,8 +71,6 @@ reduced_exp, circle_params_exp = derp.reduce_data(out_exp,
 # Extract which channel we are operating on
 true_frames = reduced_cal
 exp_frames = reduced_exp
-print(f"reduced_cal shape = {reduced_cal.shape}")
-print(f"reduced_exp shape = {reduced_exp.shape}")
 # Generate polynomials
 NMODES = 1
 NPIX = true_frames.shape[-1]
@@ -89,12 +96,9 @@ mask[r <= radius * .9] = 1
 mask[mask < 1e-10] = 0
 
 # Apply the mask to the true frames
-print(f"true frames shape after initial creation = {true_frames.shape}")
 true_frames_masked = [i * mask for i in true_frames]
 true_frames = np.asarray(true_frames_masked)
-print(f"true frames shape after masking = {true_frames.shape}")
 true_frames = np.moveaxis(true_frames, 0, -1)
-print(f"true frames shape after switcheroo = {true_frames.shape}")
 
 
 exp_frames_masked = [i * mask for i in exp_frames]
@@ -104,11 +108,12 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(2 + 7*NMODES) / 10
+offset = 2
+x0 = np.random.random(offset + 7*NMODES) / 10
 
 # ensures the piston term is quarter-wave to start / also need the second
-x0[2] = np.pi / 2
-x0[2 + 1*NMODES] = np.pi / 2
+x0[offset] = np.pi / 2
+x0[offset + 1*NMODES] = np.pi / 2
 psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
 psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
 set_backend_to_jax()
@@ -119,9 +124,13 @@ basis = create_modal_basis(NMODES, NPIX)
 basis_masked = [i * mask for i in basis]
 
 basis_masked = np.asarray(basis_masked)
-print(f"basis shape = {basis_masked.shape}")
+def GIE(I, D):
+    t1 = np.sum(I * D) ** 2
+    t2 = np.sum(D ** 2) 
+    t3 = np.sum(I ** 2)
+    return 1 - t1 / (t2 * t3)
+
 def loss(x):
-    print(psg_angles)
     if CHANNEL.lower() == "both":
         sim_frames = forward_model(x, basis_masked, basis_masked, psg_angles,
                                     dual_I=True,
@@ -134,13 +143,13 @@ def loss(x):
     
     sim_array = np.asarray(sim_frames)
     true_array = np.asarray(true_frames)
-    print(sim_array[mask].shape)
-    diff_array = (sim_array - true_array)**2
-    diff_array = np.abs(sim_array - true_array)**2
 
+    # diff_array = (sim_array - true_array)**2
+    # diff_array = np.abs(sim_array - true_array)**2
+    
     # nanmean is important for masked values
-    MSE = np.mean(diff_array[mask==1])
-    return MSE
+    # MSE = np.mean(diff_array[mask==1])
+    return GIE(sim_array, true_array)
 
 from time import perf_counter
 # t1 = perf_counter()
@@ -258,20 +267,13 @@ spatial_cal_results = results.x.copy()
 psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
 psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
 
-if CHANNEL.lower() == "both":
-    Winv = make_data_reduction_matrix(spatial_cal_results,
-                                        basis_masked,
-                                        psg_angles_exp,
-                                        rotation_ratio=2.5,
-                                        dual_I=True,
-                                        psa_angles=psa_angles_exp)
-else:
-    Winv = make_data_reduction_matrix(spatial_cal_results,
-                                        basis_masked,
-                                        psg_angles_exp,
-                                        rotation_ratio=4.91,
-                                        dual_I=False,
-                                        psa_angles=psa_angles_exp)
+Winv = make_data_reduction_matrix(spatial_cal_results,
+                                    basis_masked,
+                                    basis_masked,
+                                    psg_angles_exp,
+                                    rotation_ratio=4.91,
+                                    dual_I=False,
+                                    psa_angles=psa_angles_exp)
 
 
 true_array = np.asarray(exp_frames)

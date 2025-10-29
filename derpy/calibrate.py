@@ -87,7 +87,7 @@ def create_modal_basis(num_modes, num_pix, angle_offset=0):
     # index at 1, we add 1 to the end
     nms = [noll_to_nm(i) for i in range(1, num_modes + 1)]
     basis = list(zernike_nm_seq(nms, r, t))
-
+    
     return basis
 
 @jit
@@ -122,15 +122,16 @@ def psg_psa_states_broadcast(x0, basis_psg, basis_psa, psg_angles, rotation_rati
     psg_pol_angle = x0[0]
     psa_pol_angle = x0[1] + psa_offset
     nmodes = basis_psg.shape[0]
-    psg_wvp_coeffs = x0[2 + 0 * nmodes : 2 + 1 * nmodes]
-    psa_wvp_coeffs = x0[2 + 1 * nmodes : 2 + 2 * nmodes]
-    psg_ang_coeffs = x0[2 + 2 * nmodes : 2 + 3 * nmodes]
-    psa_ang_coeffs = x0[2 + 3 * nmodes : 2 + 4 * nmodes]
+    offset = 2
+    psg_wvp_coeffs = x0[offset + 0 * nmodes : offset + 1 * nmodes]
+    psa_wvp_coeffs = x0[offset + 1 * nmodes : offset + 2 * nmodes]
+    psg_ang_coeffs = x0[offset + 2 * nmodes : offset + 3 * nmodes]
+    psa_ang_coeffs = x0[offset + 3 * nmodes : offset + 4 * nmodes]
     
     # Adding support for PSA diattenuation which DO NOT ROTATE
-    psa_dia_coeffs = x0[2 + 4 * nmodes : 2 + 5 * nmodes]
-    psa_dia_coeffs_ret = x0[2 + 5 * nmodes : 2 + 6 * nmodes]
-    psa_dia_coeffs_ang = x0[2 + 6 * nmodes : 2 + 7 * nmodes]
+    psa_dia_coeffs = x0[offset + 4 * nmodes : offset + 5 * nmodes]
+    psa_dia_coeffs_ret = x0[offset + 5 * nmodes : offset + 6 * nmodes]
+    psa_dia_coeffs_ang = x0[offset + 6 * nmodes : offset + 7 * nmodes]
     
     # Good to make sure we are splitting the list correctly
     assert len(psg_wvp_coeffs) == nmodes
