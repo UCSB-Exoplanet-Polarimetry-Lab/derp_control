@@ -31,14 +31,14 @@ from derpy.mask import (
 CHANNEL = "Left" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251024_162230_UNCORRECTED.fits"
+CAL_DIR = Path.home() / "Data/dans_data/diamond_turned_mirror" \
+/ "Capture_DRRP_Photodiode_251030_153347_UNCORRECTED.fits"
 
-DATA_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251027_115315_UNCORRECTED.fits"
+DATA_DIR = Path.home() / "Data/dans_data/diamond_turned_mirror" \
+/ "Capture_DRRP_Photodiode_251030_154229_UNCORRECTED.fits"
 
-hdu = fits.open(CAL_DIR)
-ipdb.set_trace()
+hdu_cal = fits.open(CAL_DIR)
+hdu_data = fits.open(DATA_DIR)
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -71,6 +71,7 @@ reduced_exp, circle_params_exp = derp.reduce_data(out_exp,
 # Extract which channel we are operating on
 true_frames = reduced_cal
 exp_frames = reduced_exp
+
 # Generate polynomials
 NMODES = 1
 NPIX = true_frames.shape[-1]
@@ -94,6 +95,9 @@ mask[r <= radius * .9] = 1
 # mask *= dot
 # mask = mask.astype(bool) # need float to use nans
 mask[mask < 1e-10] = 0
+mask_extend = [mask for i in range(true_frames.shape[0])]
+mask_extend = np.asarray(mask_extend)
+mask_extend = np.moveaxis(mask_extend, 0, -1)
 
 # Apply the mask to the true frames
 true_frames_masked = [i * mask for i in true_frames]
@@ -114,16 +118,65 @@ x0 = np.random.random(offset + 7*NMODES) / 10
 # ensures the piston term is quarter-wave to start / also need the second
 x0[offset] = np.pi / 2
 x0[offset + 1*NMODES] = np.pi / 2
+x0[offset + 4*NMODES:] = 0 # PSA is a perfect polarizer with zero retardance
+
 psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
 psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
+
+# experiment PSG angles
+psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
+psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
+
+basis_withrotations_psg = []
+basis_withrotations_psa = []
+basis_withrotations_psg_exp = []
+basis_withrotations_psa_exp = []
+
+mask_extend = mask_extend.astype(np.float64)
+mask_extend[mask_extend==0] = np.nan
+
+# Construct Calibration Basis
+for offset_psg, offset_psa in zip(psg_angles, psa_angles):
+    
+    # offset is in radians to be compatible with prysm angles
+    basis = create_modal_basis(NMODES, NPIX, angle_offset=offset_psg)
+    basis_masked = [i * mask for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psg.append(basis_masked)
+    
+    basis = create_modal_basis(NMODES, NPIX, angle_offset=offset_psa)
+    basis_masked = [i * mask for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psa.append(basis_masked)
+
+# Construct Experiment Basis
+for offset_psg_exp, offset_psa_exp in zip(psg_angles_exp, psa_angles_exp):
+    
+    # offset is in radians to be compatible with prysm angles
+    basis = create_modal_basis(NMODES, NPIX, angle_offset=offset_psg_exp)
+    basis_masked = [i * mask for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psg_exp.append(basis_masked)
+    
+    basis = create_modal_basis(NMODES, NPIX, angle_offset=offset_psa_exp)
+    basis_masked = [i * mask for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psa_exp.append(basis_masked)
+
+# override the prior basis
+basis_masked_psg = np.asarray(basis_withrotations_psg)
+basis_masked_psa = np.asarray(basis_withrotations_psa)
+basis_masked_psg_exp = np.asarray(basis_withrotations_psg_exp)
+basis_masked_psa_exp = np.asarray(basis_withrotations_psa_exp)
+
+# Clear memory
+del basis_withrotations_psg, basis_withrotations_psa
+del basis_withrotations_psg_exp, basis_withrotations_psa_exp
+
 set_backend_to_jax()
 
 from derpy.calibrate import forward_model
 
-basis = create_modal_basis(NMODES, NPIX)
-basis_masked = [i * mask for i in basis]
-
-basis_masked = np.asarray(basis_masked)
 def GIE(I, D):
     t1 = np.sum(I * D) ** 2
     t2 = np.sum(D ** 2) 
@@ -131,25 +184,20 @@ def GIE(I, D):
     return 1 - t1 / (t2 * t3)
 
 def loss(x):
-    if CHANNEL.lower() == "both":
-        sim_frames = forward_model(x, basis_masked, basis_masked, psg_angles,
-                                    dual_I=True,
-                                    psa_angles=psa_angles)
-    else:
-        sim_frames = forward_model(x, basis_masked, basis_masked, psg_angles,
-                                    dual_I=False,
-                                    psa_angles=psa_angles)
+    sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa, psg_angles,
+                                dual_I=False,
+                                psa_angles=psa_angles)
 
     
     sim_array = np.asarray(sim_frames)
     true_array = np.asarray(true_frames)
 
-    # diff_array = (sim_array - true_array)**2
-    # diff_array = np.abs(sim_array - true_array)**2
+    diff_array = (sim_array - true_array)**2
+    diff_array = np.abs(sim_array - true_array)**2
     
     # nanmean is important for masked values
-    # MSE = np.mean(diff_array[mask==1])
-    return GIE(sim_array, true_array)
+    MSE = np.mean(diff_array[mask==1])
+    return MSE
 
 from time import perf_counter
 # t1 = perf_counter()
@@ -191,6 +239,15 @@ psg_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psg_ang_coeffs)
 psa_ang_coeffs = results.x[2 + 3 * len(basis) : 2 + 4 * len(basis)]
 psa_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psa_ang_coeffs)
 
+psa_dia_coeffs = results.x[2 + 4 * len(basis) : 2 + 5 * len(basis)]
+psa_dia_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs)[0]
+
+psa_dia_coeffs_ret = results.x[2 + 5 * len(basis) : 2 + 6 * len(basis)]
+psa_dia_estimate_ret = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ret)[0]
+
+psa_dia_coeffs_ang = results.x[2 + 6 * len(basis) : 2 + 7 * len(basis)]
+psa_dia_estimate_ang = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ang)[0]
+
 plt.figure()
 plt.subplot(131)
 plt.title("Estimated PSG Retarder")
@@ -226,12 +283,44 @@ plt.subplot(133)
 plt.plot(psg_ang_coeffs, label="PSG coefficients", marker="x")
 plt.plot(psa_ang_coeffs, label="PSA coefficients", marker="x")
 plt.legend()
+plot_psa = True
+
+if plot_psa:
+
+    plt.figure()
+    plt.subplot(121)
+    plt.title("Estimated PSA Diattenutation")
+    plt.imshow(psa_dia_estimate / mask)
+    plt.colorbar()
+    plt.xticks([], [])
+    plt.yticks([], [])
+    plt.subplot(122)
+    plt.plot(psa_dia_coeffs, label="Wollaston Diattenuation coefficients", marker="x")
+    plt.legend()
+
+    plt.figure()
+    plt.subplot(131)
+    plt.title("Estimated Wollaston Retardance")
+    plt.imshow(psa_dia_estimate_ret / mask, cmap="RdBu_r")
+    plt.colorbar()
+    plt.xticks([], [])
+    plt.yticks([], [])
+    plt.subplot(132)
+    plt.title("Estimated Wollaston Retarder Angle")
+    plt.imshow(psa_dia_estimate_ang / mask, cmap="RdBu_r")
+    plt.colorbar()
+    plt.xticks([], [])
+    plt.yticks([], [])
+    plt.subplot(133)
+    plt.plot(psa_dia_coeffs_ret, label="PSG coefficients", marker="x")
+    plt.plot(psa_dia_coeffs_ang, label="PSA coefficients", marker="x")
+    plt.legend()
 
 # Running out of GPU memory oops
 del psg_retarder_estimate, psa_retarder_estimate
 
 # create simulated power
-sim_frames = forward_model(results.x, basis_masked, basis_masked, psg_angles,
+sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa, psg_angles,
                            psa_angles=psa_angles)
 
 
@@ -243,10 +332,7 @@ sim_frames = forward_model(results.x, basis_masked, basis_masked, psg_angles,
 mean_simulated = [np.mean(i[mask==1]) for i in np.moveaxis(sim_frames, -1, 0)]
 mean_observed = [np.mean(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
 
-if CHANNEL == "Both":
-    psg_angles_plot = np.concatenate([psg_angles, psg_angles])
-else:
-    psg_angles_plot = psg_angles
+psg_angles_plot = psg_angles
 
 plt.figure()
 plt.plot(np.degrees(psg_angles_plot), mean_simulated, label="Fit Power", marker="x")
@@ -260,16 +346,13 @@ plt.legend()
 # Update results.x with the global rotation
 spatial_cal_results = results.x.copy()
 
-# spatial_cal_results[2] += psg_angles[-1]
-# spatial_cal_results[3] += psa_angles[-1]
+#spatial_cal_results[2] += psg_angles[-1]
+#spatial_cal_results[3] += psa_angles[-1]
 
-# experiment PSG angles
-psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
-psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
 
 Winv = make_data_reduction_matrix(spatial_cal_results,
-                                    basis_masked,
-                                    basis_masked,
+                                    basis_masked_psg_exp,
+                                    basis_masked_psa_exp,
                                     psg_angles_exp,
                                     rotation_ratio=4.91,
                                     dual_I=False,

@@ -802,8 +802,10 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             # apply image mask
             if mask is not None:
                 img = img * mask
-
-            set = img * p_ref / p_ref_0 / 2 / images[max_idx]
+            
+            # In the non-photodiode case this has a 1/2, but because we are normalizing to
+            # A single frame (instead of a sum) this is /4
+            set = img * p_ref / p_ref_0 / images[max_idx] / 4
             images[i] = set
 
     # Bin the image if binning is specified
@@ -938,7 +940,7 @@ def load_fits_data(measurement_pth, calibration_pth,
             if measurement["PSA_POWER_METER"].data.ndim > 1:
                 good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
             else:
-                good_powers_total = meausrement["PSA_POWER_METER"].data
+                good_powers_total = measurement["PSA_POWER_METER"].data
 
         if not use_encoder:
             psg_angles = measurement["PSG_COMMAND_ANGLES"]
