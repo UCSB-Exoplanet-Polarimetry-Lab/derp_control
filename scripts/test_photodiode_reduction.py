@@ -31,21 +31,21 @@ from derpy.mask import (
 CHANNEL = "Left" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "Data/microscope_objective" \
-/ "calibration_data_2025-09-18_16-09-24.fits"
+CAL_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251024_162230_UNCORRECTED.fits"
 
-DATA_DIR = Path.home() / "Data/microscope_objective" \
-/ "measurement_data_2025-09-18_16-24-34.fits"
+DATA_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251027_115315_UNCORRECTED.fits"
 
 hdu = fits.open(CAL_DIR)
+ipdb.set_trace()
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   calibration_pth=CAL_DIR,
-                                  use_encoder=True,
-                                  centering_ref_img=2,
+                                  use_encoder=False,
+                                  centering_ref_img=10,
                                   use_photodiode=True)
-
 
 # plot the photodiode power
 photodiode_observed = loaded_data["Calibration"]["powers_total"]

@@ -789,6 +789,10 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             images[i, 1] = set[1] # [zero_mask]
     else:
         p_ref_0 = powers_total[0]
+
+        # Find frame where power is maximized
+        max_idx = np.where(powers_total==np.max(powers_total))
+
         for i, img in enumerate(images):
 
             p_ref = powers_total[i]
@@ -799,7 +803,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             if mask is not None:
                 img = img * mask
 
-            set = img * p_ref / p_ref_0 / 2 / images[0]
+            set = img * p_ref / p_ref_0 / 2 / images[max_idx]
             images[i] = set
 
     # Bin the image if binning is specified
@@ -931,7 +935,10 @@ def load_fits_data(measurement_pth, calibration_pth,
             good_powers_right = None
             
             # Load the photodiode, median first dimension
-            good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
+            if measurement["PSA_POWER_METER"].data.ndim > 1:
+                good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
+            else:
+                good_powers_total = meausrement["PSA_POWER_METER"].data
 
         if not use_encoder:
             psg_angles = measurement["PSG_COMMAND_ANGLES"]

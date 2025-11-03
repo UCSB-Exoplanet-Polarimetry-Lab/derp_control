@@ -41,6 +41,10 @@ CHANNEL = "Left" # Right, Both
 CAL_DIR = Path.home() / "dans_data/JPL_image_cube_250801_084230.fits"
 DATA_DIR = Path.home() / "dans_data/JPL_image_cube_250801_085136.fits"
 
+
+CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251024_162230_CORRECTED.fits"
+DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251027_115315_CORRECTED.fits"
+
 # Another set
 # DATA_DIR = Path.home() / "dans_data/JPL_image_cube_250911_161535.fits"
 # CAL_DIR = Path.home() / "dans_data/JPL_image_cube_250911_162434.fits"
@@ -50,11 +54,6 @@ DATA_DIR = Path.home() / "dans_data/JPL_image_cube_250801_085136.fits"
 # CAL_DIR = Path.home() / "dans_data/Capture_AxoStandard_Air_250912_153842.fits"
 
 # The rotation experiments
-DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_251006_143208.fits"
-CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_251006_142259.fits"
-
-DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_WollastonRotated_251006_144621.fits"
-CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_WollastonRotated_251006_145532.fits"
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
@@ -107,7 +106,7 @@ elif CHANNEL == 'Both':
     warn("Channel 'Both' is untested, be wary of results")
 
 # Generate polynomials
-NMODES = 37
+NMODES = 1
 NPIX = true_frames.shape[-1]
 
 # Create a mask from the circle parameters
