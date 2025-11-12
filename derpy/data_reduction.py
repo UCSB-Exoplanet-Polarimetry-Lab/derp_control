@@ -6,6 +6,7 @@ from scipy.ndimage import center_of_mass, shift
 import ipdb
 import os
 import json
+import matplotlib.pyplot as plt
 
 from .gui import launch_image_selector
 from .centering import robust_circle_fit
@@ -791,7 +792,8 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
         p_ref_0 = powers_total[0]
 
         # Find frame where power is maximized
-        max_idx = np.where(powers_total==np.max(powers_total))
+        max_idx = len(powers_total) - int(np.where(powers_total==np.max(powers_total))[0]) - 1
+        print(max_idx)
 
         for i, img in enumerate(images):
 
@@ -805,7 +807,19 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             
             # In the non-photodiode case this has a 1/2, but because we are normalizing to
             # A single frame (instead of a sum) this is /4
-            set = img * p_ref / p_ref_0 / images[max_idx] / 4
+            # print(images.shape)
+            # print(max_idx)
+            # plt.figure()
+            # plt.subplot(121)
+            # plt.imshow(img)
+            # plt.colorbar()
+            # plt.subplot(122)
+            # plt.title("The Brightest Frame")
+            # plt.imshow(images[max_idx] * mask)
+            # plt.colorbar()
+            # plt.show()
+            # np.mean(images[max_idx][mask==1]) /
+            set = img * p_ref / p_ref_0 /  4
             images[i] = set
 
     # Bin the image if binning is specified
@@ -927,6 +941,9 @@ def load_fits_data(measurement_pth, calibration_pth,
             good_powers_right = powers_right
             good_powers_left = powers_left
             good_powers_total = powers_right + powers_left
+            print(power_measurement.shape)
+            print(images_left.shape)
+            print(images_right.shape)
             good_images = np.array([images_left, images_right])
         
         # Use photodiode for power tracking, only pulls frame on left

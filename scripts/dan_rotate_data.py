@@ -38,28 +38,16 @@ from derpy.mask import (
 CHANNEL = "Left" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "dans_data/JPL_image_cube_250801_084230.fits"
-DATA_DIR = Path.home() / "dans_data/JPL_image_cube_250801_085136.fits"
+CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251030_153347_CORRECTED.fits"
+DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251030_154229_CORRECTED.fits"
 
-
-CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251024_162230_CORRECTED.fits"
-DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251027_115315_CORRECTED.fits"
-
-# Another set
-# DATA_DIR = Path.home() / "dans_data/JPL_image_cube_250911_161535.fits"
-# CAL_DIR = Path.home() / "dans_data/JPL_image_cube_250911_162434.fits"
-
-# Axometrics Dataset
-# DATA_DIR = Path.home() / "dans_data/Capture_AxoStandard_250912_143641.fits"
-# CAL_DIR = Path.home() / "dans_data/Capture_AxoStandard_Air_250912_153842.fits"
-
-# The rotation experiments
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   calibration_pth=CAL_DIR,
                                   use_encoder=False,
-                                  centering_ref_img=10)
+                                  centering_ref_img=10,
+                                  use_photodiode=False)
 
 # Reduce the data
 binsize = 4
@@ -157,7 +145,6 @@ psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
 # experiment PSG angles
 psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
 psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
-
 
 from derpy.calibrate import forward_model
 
