@@ -1,5 +1,3 @@
-
-
 """
 This is a script that runs the pre-generation of rotated modal bases before calibrating
 using data from Dan Shanks' VIS-DERP at JPL's MDL
@@ -35,70 +33,66 @@ from derpy.mask import (
     create_circular_obscuration
 )
 
+
+"""
+USER INPUTS
+----------------------------------------------------------
+"""
 CHANNEL = "Left" # Right, Both
 
-# Just measuring air
-CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251030_153347_CORRECTED.fits"
-DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251030_154229_CORRECTED.fits"
+NMODES = 128
+TOL = 1e-12
 
+# Just measuring air
+CAL_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
+
+DATA_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
+
+"""
+----------------------------------------------------------
+"""
+
+hdu_cal = fits.open(CAL_DIR)
+hdu_data = fits.open(DATA_DIR)
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   calibration_pth=CAL_DIR,
                                   use_encoder=False,
                                   centering_ref_img=10,
-                                  use_photodiode=False)
+                                  use_photodiode=True)
 
 # Reduce the data
-binsize = 4
+binsize = 2
 out = loaded_data["Calibration"]
 out_exp = loaded_data["Measurement"]
+
+# make a mask
+print(out["images"].shape)
+before_bin_mask = np.zeros_like(out["images"][0])
+x = np.linspace(-1, 1, before_bin_mask.shape[0])
+x, y = np.meshgrid(x, x)
+r = np.hypot(x, y)
+before_bin_mask[r < 0.9] = 1
+
 reduced_cal, circle_params = derp.reduce_data(out,
                                               centering=None,
-                                              bin=binsize)
+                                              bin=binsize,
+                                              mask=before_bin_mask)
 
 reduced_exp, circle_params_exp = derp.reduce_data(out_exp,
                                                   centering=None,
-                                                  bin=binsize)
-
-# Extract which channel we are operating on
-if CHANNEL == 'Left':
-    # true_frames = reduced_cal[:, 0]
-    # exp_frames = reduced_exp[:, 0]
-    true_frames = reduced_cal[0]
-    exp_frames = reduced_exp[0]
-
-    # get in orientation spatial calibration likes
-    # true_frames = np.moveaxis(true_frames,0, -1)
-    # exp_frames = np.moveaxis(exp_frames, 0, -1)
-
-elif CHANNEL == 'Right':
-    # true_frames = reduced_cal[:, 1]
-    # exp_frames = reduced_exp[:, 1]
-    true_frames = reduced_cal[1]
-    exp_frames = reduced_exp[1]
-
-    # get in orientation spatial calibration likes
-    # true_frames = np.moveaxis(true_frames,0, -1)
-    # exp_frames = np.moveaxis(exp_frames, 0, -1)
-
-elif CHANNEL == 'Both':
-    # Concatenate the left, then right frames
-    left_frames = reduced_cal[0]
-    right_frames = reduced_cal[1]
-    true_frames = np.concatenate([left_frames, right_frames])
-
-    left_frames = reduced_exp[0]
-    right_frames = reduced_exp[1]
-    exp_frames = np.concatenate([left_frames, right_frames])
-    warn("Channel 'Both' is untested, be wary of results")
+                                                  bin=binsize,
+                                                  mask=before_bin_mask)
+true_frames = reduced_cal
+exp_frames = reduced_exp
 
 # Generate polynomials
-NMODES = 1
 NPIX = true_frames.shape[-1]
 
 # Create a mask from the circle parameters
-# TODO: I think these are from circle fitting BEFORE binning, binning should happen first!
 mask = np.zeros((NPIX, NPIX), dtype=int)
 y0, x0 = circle_params['center']
 radius = circle_params['radius'] / binsize # divide by bin amount
@@ -109,12 +103,6 @@ r = np.sqrt((y)**2 + (x)**2)
 
 # Using 90% of the radius to account for misregistration at the edges
 mask[r <= radius * .8] = 1
-
-# # Mask the artifact from the collimator
-# dot = create_circular_obscuration(mask.shape[0], radius=7, center=(130, 102))
-
-# mask *= dot
-# mask = mask.astype(bool) # need float to use nans
 mask[mask < 1e-10] = 0
 mask_extend = [mask for i in range(true_frames.shape[0])]
 mask_extend = np.asarray(mask_extend)
@@ -195,28 +183,31 @@ del basis_withrotations_psg_exp, basis_withrotations_psa_exp
 
 set_backend_to_jax()
 
+def GIE(I, D):
+    t1 = np.sum(I * D) ** 2
+    t2 = np.sum(D ** 2) 
+    t3 = np.sum(I ** 2)
+    return 1 - t1 / (t2 * t3)
+
+
+"""
+Cases
+- 1) Fit to only polarizer angles, retarder fast axis and retardance
+- 2) Fit to polarizer angles and diattenuation, retarder fast axis and retardance
+- 3) Fit to polarizer angles and diattenuation and retardance, retarder fast axis and retardance
+"""
 def loss(x):
 
-    if CHANNEL.lower() == "both":
-        sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
-                                    psg_angles,
-                                    dual_I=True,
-                                    psa_angles=psa_angles)
-    else:
-        sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
-                                    psg_angles,
-                                    dual_I=False,
-                                    psa_angles=psa_angles)
+    sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
+                                psg_angles,
+                                dual_I=False,
+                                psa_angles=psa_angles)
 
 
     sim_array = np.asarray(sim_frames)
     true_array = np.asarray(true_frames)
-    diff_array = (sim_array - true_array)**2
-    diff_array = np.abs(sim_array - true_array)**2
 
-    # nanmean is important for masked values
-    MSE = np.mean(diff_array[mask_extend==1])
-    return MSE
+    return GIE(sim_array[mask_extend==1], true_array[mask_extend==1])
 
 from time import perf_counter
 t1 = perf_counter()
@@ -239,7 +230,7 @@ def callback_function(xk):
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
-                   options={"maxiter":100_000, "ftol":1e-20, "gtol":1e-20,
+                   options={"maxiter":100_000, "ftol":TOL, "gtol":TOL,
                             "maxfun":100_000})
 
 if pbar is not None:
@@ -305,53 +296,44 @@ plt.plot(psg_ang_coeffs, label="PSG coefficients", marker="x")
 plt.plot(psa_ang_coeffs, label="PSA coefficients", marker="x")
 plt.legend()
 
-plot_psa = True
+plt.figure()
+plt.subplot(121)
+plt.title("Estimated PSA Diattenutation")
+plt.imshow(psa_dia_estimate / mask)
+plt.colorbar()
+plt.xticks([], [])
+plt.yticks([], [])
+plt.subplot(122)
+plt.plot(psa_dia_coeffs, label="Wollaston Diattenuation coefficients", marker="x")
+plt.legend()
 
-if plot_psa:
-
-    plt.figure()
-    plt.subplot(121)
-    plt.title("Estimated PSA Diattenutation")
-    plt.imshow(psa_dia_estimate / mask)
-    plt.colorbar()
-    plt.xticks([], [])
-    plt.yticks([], [])
-    plt.subplot(122)
-    plt.plot(psa_dia_coeffs, label="Wollaston Diattenuation coefficients", marker="x")
-    plt.legend()
-
-    plt.figure()
-    plt.subplot(131)
-    plt.title("Estimated Wollaston Retardance")
-    plt.imshow(psa_dia_estimate_ret / mask, cmap="RdBu_r")
-    plt.colorbar()
-    plt.xticks([], [])
-    plt.yticks([], [])
-    plt.subplot(132)
-    plt.title("Estimated Wollaston Retarder Angle")
-    plt.imshow(psa_dia_estimate_ang / mask, cmap="RdBu_r")
-    plt.colorbar()
-    plt.xticks([], [])
-    plt.yticks([], [])
-    plt.subplot(133)
-    plt.plot(psa_dia_coeffs_ret, label="PSG coefficients", marker="x")
-    plt.plot(psa_dia_coeffs_ang, label="PSA coefficients", marker="x")
-    plt.legend()
+plt.figure()
+plt.subplot(131)
+plt.title("Estimated Wollaston Retardance")
+plt.imshow(psa_dia_estimate_ret / mask, cmap="RdBu_r")
+plt.colorbar()
+plt.xticks([], [])
+plt.yticks([], [])
+plt.subplot(132)
+plt.title("Estimated Wollaston Retarder Angle")
+plt.imshow(psa_dia_estimate_ang / mask, cmap="RdBu_r")
+plt.colorbar()
+plt.xticks([], [])
+plt.yticks([], [])
+plt.subplot(133)
+plt.plot(psa_dia_coeffs_ret, label="PSG coefficients", marker="x")
+plt.plot(psa_dia_coeffs_ang, label="PSA coefficients", marker="x")
+plt.legend()
 
 # Running out of GPU memory oops
 del psg_retarder_estimate, psa_retarder_estimate
 
 # create simulated power
-if not CHANNEL.lower() == "both":
-    sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
-                               psg_angles,
-                               psa_angles=psa_angles)
-else:
-    sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
-                                psg_angles,
-                                rotation_ratio=2.5,
-                                dual_I=True,
-                                psa_angles=psa_angles)
+sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
+                            psg_angles,
+                            rotation_ratio=4.91,
+                            dual_I=False,
+                            psa_angles=psa_angles)
 
 
 # perform a comparison via mean power
@@ -362,10 +344,7 @@ else:
 mean_simulated = [np.mean(i[mask==1]) for i in np.moveaxis(sim_frames, -1, 0)]
 mean_observed = [np.mean(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
 
-if CHANNEL == "Both":
-    psg_angles_plot = np.concatenate([psg_angles, psg_angles])
-else:
-    psg_angles_plot = psg_angles
+psg_angles_plot = psg_angles
 
 plt.figure()
 plt.plot(np.degrees(psg_angles_plot), mean_simulated, label="Fit Power", marker="x")
@@ -376,25 +355,15 @@ plt.xlabel("PSG Angle, deg")
 plt.legend()
 
 # Perform polarimetric data reduction before and after calibration
-# Update results.x with the global rotation
 spatial_cal_results = results.x.copy()
 
-if CHANNEL.lower() == "both":
-    Winv = make_data_reduction_matrix(spatial_cal_results,
-                                        basis_masked_psg_exp,
-                                        basis_masked_psa_exp,
-                                        psg_angles_exp,
-                                        rotation_ratio=2.5,
-                                        dual_I=True,
-                                        psa_angles=psa_angles_exp)
-else:
-    Winv = make_data_reduction_matrix(spatial_cal_results,
-                                        basis_masked_psg_exp,
-                                        basis_masked_psa_exp,
-                                        psg_angles_exp,
-                                        rotation_ratio=4.91,
-                                        dual_I=False,
-                                        psa_angles=psa_angles_exp)
+Winv = make_data_reduction_matrix(spatial_cal_results,
+                                    basis_masked_psg_exp,
+                                    basis_masked_psa_exp,
+                                    psg_angles_exp,
+                                    rotation_ratio=4.91,
+                                    dual_I=False,
+                                    psa_angles=psa_angles_exp)
 
 
 true_array = np.asarray(exp_frames)

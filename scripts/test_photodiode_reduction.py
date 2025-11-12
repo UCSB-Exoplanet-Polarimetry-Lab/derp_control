@@ -1,10 +1,3 @@
-
-
-"""
-This is a script that runs the pre-generation of rotated modal bases before calibrating
-using data from Dan Shanks' VIS-DERP at JPL's MDL
-"""
-
 from numpy import exp
 import derpy as derp
 from pathlib import Path
@@ -38,60 +31,46 @@ from derpy.mask import (
 CHANNEL = "Left" # Right, Both
 
 # Just measuring air
-CAL_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251030_153347_CORRECTED.fits"
-DATA_DIR = Path.home() / "Data/dans_data/Capture_DRRP_Photodiode_251030_154229_CORRECTED.fits"
+CAL_DIR = Path.home() / "Data/dans_data/diamond_turned_mirror" \
+/ "Capture_DRRP_Photodiode_251030_153347_UNCORRECTED.fits"
 
+DATA_DIR = Path.home() / "Data/dans_data/diamond_turned_mirror" \
+/ "Capture_DRRP_Photodiode_251030_154229_UNCORRECTED.fits"
+
+hdu_cal = fits.open(CAL_DIR)
+hdu_data = fits.open(DATA_DIR)
 
 # Get the experiment dictionaries
 loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   calibration_pth=CAL_DIR,
                                   use_encoder=False,
                                   centering_ref_img=10,
-                                  use_photodiode=False)
+                                  use_photodiode=True)
+
+# plot the photodiode power
+photodiode_observed = loaded_data["Calibration"]["powers_total"]
+p_ref_0 = photodiode_observed[0]
+plt.figure()
+plt.title("Photodiode Measurements")
+plt.plot(photodiode_observed / p_ref_0)
+plt.ylabel("Power, normalized to first measurement")
+plt.xlabel("Measurement index")
+plt.show()
 
 # Reduce the data
-binsize = 4
 out = loaded_data["Calibration"]
 out_exp = loaded_data["Measurement"]
 reduced_cal, circle_params = derp.reduce_data(out,
                                               centering=None,
-                                              bin=binsize)
+                                              bin=2)
 
 reduced_exp, circle_params_exp = derp.reduce_data(out_exp,
                                                   centering=None,
-                                                  bin=binsize)
+                                                  bin=2)
 
 # Extract which channel we are operating on
-if CHANNEL == 'Left':
-    # true_frames = reduced_cal[:, 0]
-    # exp_frames = reduced_exp[:, 0]
-    true_frames = reduced_cal[0]
-    exp_frames = reduced_exp[0]
-
-    # get in orientation spatial calibration likes
-    # true_frames = np.moveaxis(true_frames,0, -1)
-    # exp_frames = np.moveaxis(exp_frames, 0, -1)
-
-elif CHANNEL == 'Right':
-    # true_frames = reduced_cal[:, 1]
-    # exp_frames = reduced_exp[:, 1]
-    true_frames = reduced_cal[1]
-    exp_frames = reduced_exp[1]
-
-    # get in orientation spatial calibration likes
-    # true_frames = np.moveaxis(true_frames,0, -1)
-    # exp_frames = np.moveaxis(exp_frames, 0, -1)
-
-elif CHANNEL == 'Both':
-    # Concatenate the left, then right frames
-    left_frames = reduced_cal[0]
-    right_frames = reduced_cal[1]
-    true_frames = np.concatenate([left_frames, right_frames])
-
-    left_frames = reduced_exp[0]
-    right_frames = reduced_exp[1]
-    exp_frames = np.concatenate([left_frames, right_frames])
-    warn("Channel 'Both' is untested, be wary of results")
+true_frames = reduced_cal
+exp_frames = reduced_exp
 
 # Generate polynomials
 NMODES = 1
@@ -101,14 +80,14 @@ NPIX = true_frames.shape[-1]
 # TODO: I think these are from circle fitting BEFORE binning, binning should happen first!
 mask = np.zeros((NPIX, NPIX), dtype=int)
 y0, x0 = circle_params['center']
-radius = circle_params['radius'] / binsize # divide by bin amount
+radius = circle_params['radius'] / 2 # divide by bin amount
 
 x = np.arange(-NPIX//2, NPIX//2, dtype=np.float64)
 y, x = np.meshgrid(x, x)
 r = np.sqrt((y)**2 + (x)**2)
 
 # Using 90% of the radius to account for misregistration at the edges
-mask[r <= radius * .8] = 1
+mask[r <= radius * .9] = 1
 
 # # Mask the artifact from the collimator
 # dot = create_circular_obscuration(mask.shape[0], radius=7, center=(130, 102))
@@ -125,20 +104,22 @@ true_frames_masked = [i * mask for i in true_frames]
 true_frames = np.asarray(true_frames_masked)
 true_frames = np.moveaxis(true_frames, 0, -1)
 
+
 exp_frames_masked = [i * mask for i in exp_frames]
 exp_frames = np.asarray(exp_frames_masked)
 exp_frames = np.moveaxis(exp_frames, 0, -1)
 
+
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(2 + 7*NMODES) / 100
+offset = 2
+x0 = np.random.random(offset + 7*NMODES) / 10
 
 # ensures the piston term is quarter-wave to start / also need the second
-x0[2] = np.pi / 2
-x0[2 + 1*NMODES] = np.pi / 2
+x0[offset] = np.pi / 2
+x0[offset + 1*NMODES] = np.pi / 2
+x0[offset + 4*NMODES:] = 0 # PSA is a perfect polarizer with zero retardance
 
-x0[2 + 4*NMODES] = 0 # PSA is a polarizer
-# x0[2 + 4*NMODES+1:] = 0
 psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
 psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
 
@@ -146,12 +127,11 @@ psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
 psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
 psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
 
-from derpy.calibrate import forward_model
-
 basis_withrotations_psg = []
 basis_withrotations_psa = []
 basis_withrotations_psg_exp = []
 basis_withrotations_psa_exp = []
+
 mask_extend = mask_extend.astype(np.float64)
 mask_extend[mask_extend==0] = np.nan
 
@@ -195,39 +175,41 @@ del basis_withrotations_psg_exp, basis_withrotations_psa_exp
 
 set_backend_to_jax()
 
+from derpy.calibrate import forward_model
+
+def GIE(I, D):
+    t1 = np.sum(I * D) ** 2
+    t2 = np.sum(D ** 2) 
+    t3 = np.sum(I ** 2)
+    return 1 - t1 / (t2 * t3)
+
 def loss(x):
+    sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa, psg_angles,
+                                dual_I=False,
+                                psa_angles=psa_angles)
 
-    if CHANNEL.lower() == "both":
-        sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
-                                    psg_angles,
-                                    dual_I=True,
-                                    psa_angles=psa_angles)
-    else:
-        sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
-                                    psg_angles,
-                                    dual_I=False,
-                                    psa_angles=psa_angles)
-
-
+    
     sim_array = np.asarray(sim_frames)
     true_array = np.asarray(true_frames)
+
     diff_array = (sim_array - true_array)**2
     diff_array = np.abs(sim_array - true_array)**2
-
+    
     # nanmean is important for masked values
-    MSE = np.mean(diff_array[mask_extend==1])
+    MSE = np.mean(diff_array[mask==1])
     return MSE
 
 from time import perf_counter
-t1 = perf_counter()
-_ = loss(x0)
-print(f"Time taken for forward model: {perf_counter() - t1:.2f} seconds")
+# t1 = perf_counter()
+# _ = loss(x0)
+# print(f"Time taken for forward model: {perf_counter() - t1:.2f} seconds")
 
-loss_rev = jacrev(loss)
+# loss_rev = jacrev(loss)
 loss_fg = value_and_grad(loss)
-t1 = perf_counter()
-_ = loss_rev(x0)
-print(f"Time taken for reverse model: {perf_counter() - t1:.2f} seconds")
+_ = loss(x0)
+# t1 = perf_counter()
+# _ = loss_rev(x0)
+# print(f"Time taken for reverse model: {perf_counter() - t1:.2f} seconds")
 
 # Callback at every function initialization
 pbar = None # Initialize pbar globally or pass it as an argument
@@ -239,26 +221,23 @@ def callback_function(xk):
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
-                   options={"maxiter":100_000, "ftol":1e-20, "gtol":1e-20,
-                            "maxfun":100_000})
+                    options={"maxiter":10000, "ftol":1e-20, "gtol":1e-20})
 
 if pbar is not None:
     pbar.close()
 
-print(results.message)
-
 # extract the retarder coeffs
 psg_ret_coeffs = results.x[2 : 2+len(basis)]
-psg_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked_psg, psg_ret_coeffs)[0]
+psg_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked, psg_ret_coeffs)
 
 psa_ret_coeffs = results.x[2 + len(basis) : 2 + 2*len(basis)]
-psa_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_ret_coeffs)[0]
+psa_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked, psa_ret_coeffs)
 
 psg_ang_coeffs = results.x[2 + 2 * len(basis) : 2 + 3 * len(basis)]
-psg_angle_estimate = sum_of_2d_modes_wrapper(basis_masked_psg, psg_ang_coeffs)[0]
+psg_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psg_ang_coeffs)
 
 psa_ang_coeffs = results.x[2 + 3 * len(basis) : 2 + 4 * len(basis)]
-psa_angle_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_ang_coeffs)[0]
+psa_angle_estimate = sum_of_2d_modes_wrapper(basis_masked, psa_ang_coeffs)
 
 psa_dia_coeffs = results.x[2 + 4 * len(basis) : 2 + 5 * len(basis)]
 psa_dia_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs)[0]
@@ -304,7 +283,6 @@ plt.subplot(133)
 plt.plot(psg_ang_coeffs, label="PSG coefficients", marker="x")
 plt.plot(psa_ang_coeffs, label="PSA coefficients", marker="x")
 plt.legend()
-
 plot_psa = True
 
 if plot_psa:
@@ -342,16 +320,8 @@ if plot_psa:
 del psg_retarder_estimate, psa_retarder_estimate
 
 # create simulated power
-if not CHANNEL.lower() == "both":
-    sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
-                               psg_angles,
-                               psa_angles=psa_angles)
-else:
-    sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
-                                psg_angles,
-                                rotation_ratio=2.5,
-                                dual_I=True,
-                                psa_angles=psa_angles)
+sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa, psg_angles,
+                           psa_angles=psa_angles)
 
 
 # perform a comparison via mean power
@@ -362,10 +332,7 @@ else:
 mean_simulated = [np.mean(i[mask==1]) for i in np.moveaxis(sim_frames, -1, 0)]
 mean_observed = [np.mean(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
 
-if CHANNEL == "Both":
-    psg_angles_plot = np.concatenate([psg_angles, psg_angles])
-else:
-    psg_angles_plot = psg_angles
+psg_angles_plot = psg_angles
 
 plt.figure()
 plt.plot(np.degrees(psg_angles_plot), mean_simulated, label="Fit Power", marker="x")
@@ -379,22 +346,17 @@ plt.legend()
 # Update results.x with the global rotation
 spatial_cal_results = results.x.copy()
 
-if CHANNEL.lower() == "both":
-    Winv = make_data_reduction_matrix(spatial_cal_results,
-                                        basis_masked_psg_exp,
-                                        basis_masked_psa_exp,
-                                        psg_angles_exp,
-                                        rotation_ratio=2.5,
-                                        dual_I=True,
-                                        psa_angles=psa_angles_exp)
-else:
-    Winv = make_data_reduction_matrix(spatial_cal_results,
-                                        basis_masked_psg_exp,
-                                        basis_masked_psa_exp,
-                                        psg_angles_exp,
-                                        rotation_ratio=4.91,
-                                        dual_I=False,
-                                        psa_angles=psa_angles_exp)
+#spatial_cal_results[2] += psg_angles[-1]
+#spatial_cal_results[3] += psa_angles[-1]
+
+
+Winv = make_data_reduction_matrix(spatial_cal_results,
+                                    basis_masked_psg_exp,
+                                    basis_masked_psa_exp,
+                                    psg_angles_exp,
+                                    rotation_ratio=4.91,
+                                    dual_I=False,
+                                    psa_angles=psa_angles_exp)
 
 
 true_array = np.asarray(exp_frames)
@@ -438,10 +400,3 @@ plt.title(f"Retardance Pupil, NMODES={NMODES}, "+fr"${np.nanmean(np.degrees(reta
 plt.imshow(np.degrees(retardance_pupil), cmap="RdBu_r")
 plt.colorbar(label="Retardance, degrees")
 plt.show()
-
-WAVELENGTH_SELECT = 595
-
-hdu = fits.PrimaryHDU(M_meas)
-hdu.header["NMODES"] = (NMODES, "Number of Spatial Modes used to calibrate")
-hdu.header["WAVELENGTH"] = (WAVELENGTH_SELECT, "Measured Wavelength")
-hdu.writeto(f"spatial_cal_gpi_hwp_{NMODES}modes_1e-40ftol.fits", overwrite=True)
