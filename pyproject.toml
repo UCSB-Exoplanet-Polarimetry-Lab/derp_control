@@ -18,8 +18,9 @@ authors = [
 
 keywords = ["mueller", "polarimetry", "data reduction", "hardware"]
 dependencies = [
-    "numpy",
-    "scipy",
+    "numpy<=1.26.1",
+    "scikit-image",
+    "prysm",
     "pylablib",
     "tqdm",
     "matplotlib",
@@ -28,10 +29,8 @@ dependencies = [
     "msgpack",
     "msgpack_numpy",
     "astropy",
-    "scikit-image",
     "ipdb",
     "jax",
-    "prysm",
 ]
 
 classifiers = [
