@@ -8,7 +8,7 @@ import derpy as derp
 from pathlib import Path
 import ipdb
 from tqdm import tqdm
-from jax import value_and_grad, config, jacrev
+from jax import value_and_grad, config, jacrev, debug, jit
 from warnings import warn
 from time import perf_counter
 from astropy.io import fits
@@ -21,6 +21,7 @@ from matplotlib.animation import FuncAnimation
 from scipy.optimize import minimize
 from scipy.ndimage import shift
 from katsu.katsu_math import np, set_backend_to_jax
+from katsu.mueller import linear_retarder
 
 # our spatial calibration stuff
 from derpy.calibrate import (
@@ -40,16 +41,17 @@ USER INPUTS
 """
 CHANNEL = "Left" # Right, Both
 
-NMODES = 128
-TOL = 1e-12
+NMODES = 1
+TOL = 1e-7 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Just measuring air
-CAL_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
+CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+/ "calibration_data_2026-01-13_15-15-09.fits"
 
-DATA_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
+DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+/ "measurement_data_2026-01-13_15-18-36.fits"
 
+HANDEDNESS = 1
 """
 ----------------------------------------------------------
 """
@@ -65,7 +67,7 @@ loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   use_photodiode=True)
 
 # Reduce the data
-binsize = 2
+binsize = 12
 out = loaded_data["Calibration"]
 out_exp = loaded_data["Measurement"]
 
@@ -75,7 +77,7 @@ before_bin_mask = np.zeros_like(out["images"][0])
 x = np.linspace(-1, 1, before_bin_mask.shape[0])
 x, y = np.meshgrid(x, x)
 r = np.hypot(x, y)
-before_bin_mask[r < 0.9] = 1
+before_bin_mask[r < 1.] = 1
 
 reduced_cal, circle_params = derp.reduce_data(out,
                                               centering=None,
@@ -93,22 +95,21 @@ exp_frames = reduced_exp
 NPIX = true_frames.shape[-1]
 
 # Create a mask from the circle parameters
-mask = np.zeros((NPIX, NPIX), dtype=int)
+mask = np.ones_like(true_frames[0])
+mask[true_frames[0] < 1] = 0
+# mask = np.zeros((NPIX, NPIX), dtype=int)
 y0, x0 = circle_params['center']
 radius = circle_params['radius'] / binsize # divide by bin amount
 
-x = np.arange(-NPIX//2, NPIX//2, dtype=np.float64)
-y, x = np.meshgrid(x, x)
-r = np.sqrt((y)**2 + (x)**2)
-
-# Using 90% of the radius to account for misregistration at the edges
-mask[r <= radius * .8] = 1
-mask[mask < 1e-10] = 0
-mask_extend = [mask for i in range(true_frames.shape[0])]
-mask_extend = np.asarray(mask_extend)
-mask_extend = np.moveaxis(mask_extend, 0, -1)
+# x = np.arange(-NPIX//2, NPIX//2, dtype=np.float64)
+# y, x = np.meshgrid(x, x)
+# r = np.sqrt((y)**2 + (x)**2)
+# 
+# # Using 90% of the radius to account for misregistration at the edges
+# mask[r <= radius * .6] = 1
 
 # Apply the mask to the true frames
+print(f"true frames shape = {true_frames.shape}")
 true_frames_masked = [i * mask for i in true_frames]
 true_frames = np.asarray(true_frames_masked)
 true_frames = np.moveaxis(true_frames, 0, -1)
@@ -119,13 +120,13 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(2 + 7*NMODES) / 100
+x0 = np.random.random(2 + 4*NMODES) / 100
 
 # ensures the piston term is quarter-wave to start / also need the second
 x0[2] = np.pi / 2
 x0[2 + 1*NMODES] = np.pi / 2
 
-x0[2 + 4*NMODES] = 0 # PSA is a polarizer
+# x0[2 + 4*NMODES] = 0 # PSA is a polarizer
 # x0[2 + 4*NMODES+1:] = 0
 psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
 psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
@@ -134,14 +135,23 @@ psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
 psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
 psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
 
+psg_angles = psg_angles * HANDEDNESS
+psa_angles = psa_angles * HANDEDNESS
+
+psg_angles_exp = psg_angles_exp * HANDEDNESS
+psa_angles_exp = psa_angles_exp * HANDEDNESS
+
 from derpy.calibrate import forward_model
 
 basis_withrotations_psg = []
 basis_withrotations_psa = []
 basis_withrotations_psg_exp = []
 basis_withrotations_psa_exp = []
-mask_extend = mask_extend.astype(np.float64)
-mask_extend[mask_extend==0] = np.nan
+
+plt.figure()
+plt.title("Mask before basis creation")
+plt.imshow(mask)
+plt.colorbar()
 
 # Construct Calibration Basis
 for offset_psg, offset_psa in zip(psg_angles, psa_angles):
@@ -177,6 +187,29 @@ basis_masked_psa = np.asarray(basis_withrotations_psa)
 basis_masked_psg_exp = np.asarray(basis_withrotations_psg_exp)
 basis_masked_psa_exp = np.asarray(basis_withrotations_psa_exp)
 
+mode_to_show = NMODES-1
+angle_to_show = 4
+
+plt.figure(figsize=[16,4])
+plt.suptitle("Checking Modes")
+plt.subplot(141)
+plt.imshow(basis_masked_psg[angle_to_show, mode_to_show])
+plt.colorbar()
+plt.subplot(142)
+plt.imshow(basis_masked_psa[angle_to_show, mode_to_show])
+plt.colorbar()
+plt.subplot(143)
+plt.imshow(basis_masked_psg_exp[angle_to_show, mode_to_show])
+plt.colorbar()
+plt.subplot(144)
+plt.imshow(basis_masked_psa_exp[angle_to_show, mode_to_show])
+plt.colorbar()
+
+plt.figure()
+plt.title("Checking power frames masking")
+print("True frames shape =  ",true_frames.shape)
+plt.imshow(true_frames[...,0])
+plt.colorbar()
 # Clear memory
 del basis_withrotations_psg, basis_withrotations_psa
 del basis_withrotations_psg_exp, basis_withrotations_psa_exp
@@ -190,35 +223,65 @@ def GIE(I, D):
     return 1 - t1 / (t2 * t3)
 
 
+def MSE(I, D):
+    squared_error = (I - D) ** 2
+    return np.mean(squared_error)
+
+
 """
 Cases
 - 1) Fit to only polarizer angles, retarder fast axis and retardance
 - 2) Fit to polarizer angles and diattenuation, retarder fast axis and retardance
 - 3) Fit to polarizer angles and diattenuation and retardance, retarder fast axis and retardance
 """
+
+# def loss(x):
+# 
+#     sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
+#                                 psg_angles,
+#                                 dual_I=False,
+#                                 psa_angles=psa_angles)
+# 
+# 
+#     sim_array = np.asarray(sim_frames)
+#     true_array = np.asarray(true_frames)
+#     true_array = true_array / true_array.max()
+#     return MSE(sim_array[mask_extend==1], true_array[mask_extend==1])
+
+
+# Try a different loss where we normalize by the identity matrix
+
 def loss(x):
 
-    sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
-                                psg_angles,
-                                dual_I=False,
-                                psa_angles=psa_angles)
-
-
-    sim_array = np.asarray(sim_frames)
     true_array = np.asarray(true_frames)
+    true_array = true_array[..., np.newaxis]
+    
+    # make the data reduction matrix
+    Winv = make_data_reduction_matrix(x,
+                                      basis_masked_psg,
+                                      basis_masked_psa,
+                                      psg_angles=psg_angles,
+                                      psa_angles=psa_angles)
+    
+    M_meas = Winv @ true_array
+    M_meas = M_meas[...,0] # cut off the last axis, which was there for matrix multiplication
+    M_meas = M_meas.reshape([*Winv.shape[:-2], 4, 4]) # make a Mueller matrix again
+    
+    # Normalize using mask
+    M_meas = M_meas.at[mask==1.].set(M_meas[mask==1] / M_meas[mask==1, 0, 0, None, None]) # Normalize by the transmission element
+    
+    return MSE(np.eye(4), M_meas[mask==1])
 
-    return GIE(sim_array[mask_extend==1], true_array[mask_extend==1])
 
 from time import perf_counter
-t1 = perf_counter()
 _ = loss(x0)
-print(f"Time taken for forward model: {perf_counter() - t1:.2f} seconds")
-
-loss_rev = jacrev(loss)
-loss_fg = value_and_grad(loss)
 t1 = perf_counter()
-_ = loss_rev(x0)
-print(f"Time taken for reverse model: {perf_counter() - t1:.2f} seconds")
+loss_fg = value_and_grad(loss)
+f, g = loss_fg(x0)
+
+print(f"Time taken to compile and run the fg(x): {perf_counter() - t1:.2f} seconds")
+print(f"function val = {f}")
+print(f"gradient val = {g}")
 
 # Callback at every function initialization
 pbar = None # Initialize pbar globally or pass it as an argument
@@ -236,7 +299,7 @@ results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
 if pbar is not None:
     pbar.close()
 
-print(results.message)
+print(results)
 
 # extract the retarder coeffs
 psg_ret_coeffs = results.x[2 : 2+len(basis)]
@@ -251,14 +314,14 @@ psg_angle_estimate = sum_of_2d_modes_wrapper(basis_masked_psg, psg_ang_coeffs)[0
 psa_ang_coeffs = results.x[2 + 3 * len(basis) : 2 + 4 * len(basis)]
 psa_angle_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_ang_coeffs)[0]
 
-psa_dia_coeffs = results.x[2 + 4 * len(basis) : 2 + 5 * len(basis)]
-psa_dia_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs)[0]
-
-psa_dia_coeffs_ret = results.x[2 + 5 * len(basis) : 2 + 6 * len(basis)]
-psa_dia_estimate_ret = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ret)[0]
-
-psa_dia_coeffs_ang = results.x[2 + 6 * len(basis) : 2 + 7 * len(basis)]
-psa_dia_estimate_ang = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ang)[0]
+# psa_dia_coeffs = results.x[2 + 4 * len(basis) : 2 + 5 * len(basis)]
+# psa_dia_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs)[0]
+# 
+# psa_dia_coeffs_ret = results.x[2 + 5 * len(basis) : 2 + 6 * len(basis)]
+# psa_dia_estimate_ret = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ret)[0]
+# 
+# psa_dia_coeffs_ang = results.x[2 + 6 * len(basis) : 2 + 7 * len(basis)]
+# psa_dia_estimate_ang = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ang)[0]
 
 plt.figure()
 plt.subplot(131)
@@ -296,34 +359,34 @@ plt.plot(psg_ang_coeffs, label="PSG coefficients", marker="x")
 plt.plot(psa_ang_coeffs, label="PSA coefficients", marker="x")
 plt.legend()
 
-plt.figure()
-plt.subplot(121)
-plt.title("Estimated PSA Diattenutation")
-plt.imshow(psa_dia_estimate / mask)
-plt.colorbar()
-plt.xticks([], [])
-plt.yticks([], [])
-plt.subplot(122)
-plt.plot(psa_dia_coeffs, label="Wollaston Diattenuation coefficients", marker="x")
-plt.legend()
-
-plt.figure()
-plt.subplot(131)
-plt.title("Estimated Wollaston Retardance")
-plt.imshow(psa_dia_estimate_ret / mask, cmap="RdBu_r")
-plt.colorbar()
-plt.xticks([], [])
-plt.yticks([], [])
-plt.subplot(132)
-plt.title("Estimated Wollaston Retarder Angle")
-plt.imshow(psa_dia_estimate_ang / mask, cmap="RdBu_r")
-plt.colorbar()
-plt.xticks([], [])
-plt.yticks([], [])
-plt.subplot(133)
-plt.plot(psa_dia_coeffs_ret, label="PSG coefficients", marker="x")
-plt.plot(psa_dia_coeffs_ang, label="PSA coefficients", marker="x")
-plt.legend()
+# plt.figure()
+# plt.subplot(121)
+# plt.title("Estimated PSA Diattenutation")
+# plt.imshow(psa_dia_estimate / mask)
+# plt.colorbar()
+# plt.xticks([], [])
+# plt.yticks([], [])
+# plt.subplot(122)
+# plt.plot(psa_dia_coeffs, label="Wollaston Diattenuation coefficients", marker="x")
+# plt.legend()
+# 
+# plt.figure()
+# plt.subplot(131)
+# plt.title("Estimated Wollaston Retardance")
+# plt.imshow(psa_dia_estimate_ret / mask, cmap="RdBu_r")
+# plt.colorbar()
+# plt.xticks([], [])
+# plt.yticks([], [])
+# plt.subplot(132)
+# plt.title("Estimated Wollaston Retarder Angle")
+# plt.imshow(psa_dia_estimate_ang / mask, cmap="RdBu_r")
+# plt.colorbar()
+# plt.xticks([], [])
+# plt.yticks([], [])
+# plt.subplot(133)
+# plt.plot(psa_dia_coeffs_ret, label="PSG coefficients", marker="x")
+# plt.plot(psa_dia_coeffs_ang, label="PSA coefficients", marker="x")
+# plt.legend()
 
 # Running out of GPU memory oops
 del psg_retarder_estimate, psa_retarder_estimate
@@ -343,12 +406,14 @@ sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
 # way I could think of doing so
 mean_simulated = [np.mean(i[mask==1]) for i in np.moveaxis(sim_frames, -1, 0)]
 mean_observed = [np.mean(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
-
+mean_simulated = np.asarray(mean_simulated)
+mean_observed = np.asarray(mean_observed)
 psg_angles_plot = psg_angles
 
 plt.figure()
-plt.plot(np.degrees(psg_angles_plot), mean_simulated, label="Fit Power", marker="x")
-plt.plot(np.degrees(psg_angles_plot), mean_observed, label="Measured Power",
+plt.title("max-normalized power observed")
+plt.plot(np.degrees(psg_angles_plot), mean_simulated / mean_simulated.max(), label="Fit Power", marker="x")
+plt.plot(np.degrees(psg_angles_plot), mean_observed / mean_observed.max(), label="Measured Power",
                                                 marker="o", linestyle=None)
 plt.ylabel("power")
 plt.xlabel("PSG Angle, deg")
@@ -357,7 +422,22 @@ plt.legend()
 # Perform polarimetric data reduction before and after calibration
 spatial_cal_results = results.x.copy()
 
-Winv = make_data_reduction_matrix(spatial_cal_results,
+plt.figure(figsize=[16,4])
+plt.suptitle("Checking Modes Experiment")
+plt.subplot(141)
+plt.imshow(basis_masked_psg[angle_to_show, mode_to_show])
+plt.colorbar()
+plt.subplot(142)
+plt.imshow(basis_masked_psa[angle_to_show, mode_to_show])
+plt.colorbar()
+plt.subplot(143)
+plt.imshow(basis_masked_psg_exp[angle_to_show, mode_to_show])
+plt.colorbar()
+plt.subplot(144)
+plt.imshow(basis_masked_psa_exp[angle_to_show, mode_to_show])
+plt.colorbar()
+
+Winv = make_data_reduction_matrix(results.x,
                                     basis_masked_psg_exp,
                                     basis_masked_psa_exp,
                                     psg_angles_exp,
@@ -379,7 +459,7 @@ M_meas /= M_meas[..., 0, 0, None, None]
 # Get the RMS of data within mask
 I = np.eye(4)
 
-med_M = np.nanmedian(M_meas[mask], axis=0)
+med_M = np.nanmedian(M_meas[mask.astype(int)], axis=0)
 var = (med_M - I)**2
 rms = np.sqrt(np.sum(var))
 
@@ -392,6 +472,16 @@ M_dia = np.zeros_like(M_meas)
 M_ret = np.zeros_like(M_meas)
 M_dep = np.zeros_like(M_meas)
 
+# It would be nice to have a faster way of doing this that avoids NaNs
+from scipy.linalg import logm
+
+# Need to store the ellipse parameters
+A = np.zeros(M_meas.shape[:-2])
+B = np.zeros(M_meas.shape[:-2])
+theta = np.zeros(M_meas.shape[:-2])
+handedness = np.zeros(M_meas.shape[:-2])
+qwp = linear_retarder(0, np.pi / 4) 
+
 for i in range(M_meas.shape[0]):
     for j in range(M_meas.shape[1]):
 
@@ -399,13 +489,106 @@ for i in range(M_meas.shape[0]):
         M_dep = M_dep.at[i, j].set(mdep)
         M_ret = M_ret.at[i, j].set(mret)
         M_dia = M_dia.at[i, j].set(mdia)
+        
+        # Let's get the eigenpolarization map from the retarder
+        # mret = qwp @ mret 
+        tracem = np.trace(mret, axis1=-2, axis2=-1)
+        phi = np.arccos(tracem/2 - 1)
+        front = phi / (2 * np.sin(phi))
+
+        # These are the given quantities, but it looks flipped to me
+        phi_h = front * (mret[..., 2, 3] - mret[..., 3, 2])
+        phi_45 = front * (mret[..., 3, 1] - mret[..., 1, 3])
+        phi_L = front * (mret[..., 2, 1] - mret[..., 1, 2])
+
+        # Determine the stokes vector
+        stokes_fast = np.asarray([1, phi_h, phi_45, phi_L])
+        # stokes_slow = np.asarray([1, -phi_h, -phi_45, -phi_L])
+
+        absL = np.sqrt(phi_h**2 + phi_45**2)
+        Ip = np.sqrt(absL**2 + phi_L**2)
+
+        # Ellipse parameters
+        theta = theta.at[i, j].set(0.5 * np.arctan2(phi_45, phi_h))
+        A = A.at[i, j].set(np.sqrt(0.5 * (Ip + absL)))
+        B = B.at[i, j].set(np.sqrt(0.5 * (Ip - absL)))
+        handedness = handedness.at[i, j].set(np.sign(phi_L))
 
 retardance_pupil = retardance_from_mueller(M_ret)
 
 plt.figure()
 plt.title(f"Retardance Pupil, NMODES={NMODES}, "+fr"${np.nanmean(np.degrees(retardance_pupil))} \pm {np.nanstd(np.degrees(retardance_pupil)):.2f}^\circ$")
-plt.imshow(np.degrees(retardance_pupil), cmap="RdBu_r")
+plt.imshow(np.degrees(retardance_pupil), cmap="RdBu_r", vmin=1, vmax=4)
 plt.colorbar(label="Retardance, degrees")
+
+plt.figure(figsize=[12, 3])
+plt.subplot(141)
+plt.imshow(A)
+plt.title("Semi-major axis")
+plt.colorbar()
+plt.subplot(142)
+plt.imshow(B)
+plt.title("Semi-minor axis")
+plt.colorbar()
+plt.subplot(143)
+plt.imshow(theta)
+plt.title("AoLP")
+plt.colorbar()
+plt.subplot(144)
+plt.imshow(handedness)
+plt.title("Handedness")
+plt.colorbar()
+
+
+# Try this ellipse plotting code
+from matplotlib.patches import Ellipse
+
+# Example data - replace with your actual arrays
+
+# Create background image (e.g., intensity)
+background = np.degrees(retardance_pupil)
+size = background.shape[0]
+
+# Create figure
+fig, ax = plt.subplots(figsize=(10, 10))
+
+# Display background
+im = ax.imshow(background, cmap='Spectral', origin='lower', extent=[0, size, 0, size])
+plt.colorbar(im, ax=ax, label='Retardance [rad]')
+
+# Downsample for clearer visualization (plot every nth ellipse)
+step = 5  # Adjust this to control density of ellipses
+scale = 1  # Scale factor for ellipse size
+
+for i in range(0, size, step):
+    for j in range(0, size, step):
+        # Get ellipse parameters at this position
+        a = A[i, j] * scale
+        b = B[i, j] * scale
+        angle = theta[i, j]
+        h = handedness[i, j]
+        
+        # Create ellipse
+        ellipse = Ellipse(
+            xy=(j + 0.5, i + 0.5),  # Center position
+            width=2*a,              # Full width
+            height=2*b,             # Full height
+            angle=angle,            # Rotation angle
+            facecolor='none',
+            edgecolor='red' if h > 0 else 'blue',  # Color by handedness
+            linewidth=1.5,
+            alpha=0.7
+        )
+        ax.add_patch(ellipse)
+
+# Set labels and title
+ax.set_xlabel('X Position')
+ax.set_ylabel('Y Position')
+ax.set_title('Elliptical Polarization Visualization\n(Red: Right-handed, Blue: Left-handed)')
+ax.set_xlim(0, size)
+ax.set_ylim(0, size)
+
+plt.tight_layout()
 plt.show()
 
 WAVELENGTH_SELECT = 595

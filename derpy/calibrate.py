@@ -131,9 +131,9 @@ def psg_psa_states_broadcast(x0, basis_psg, basis_psa, psg_angles, rotation_rati
     psa_ang_coeffs = x0[offset + 3 * nmodes : offset + 4 * nmodes]
     
     # Adding support for PSA diattenuation which DO NOT ROTATE
-    psa_dia_coeffs = x0[offset + 4 * nmodes : offset + 5 * nmodes]
-    psa_dia_coeffs_ret = x0[offset + 5 * nmodes : offset + 6 * nmodes]
-    psa_dia_coeffs_ang = x0[offset + 6 * nmodes : offset + 7 * nmodes]
+    # psa_dia_coeffs = x0[offset + 4 * nmodes : offset + 5 * nmodes]
+    # psa_dia_coeffs_ret = x0[offset + 5 * nmodes : offset + 6 * nmodes]
+    # psa_dia_coeffs_ang = x0[offset + 6 * nmodes : offset + 7 * nmodes]
     
     # Good to make sure we are splitting the list correctly
     assert len(psg_wvp_coeffs) == nmodes
@@ -177,10 +177,11 @@ def psg_psa_states_broadcast(x0, basis_psg, basis_psa, psg_angles, rotation_rati
     #psa_ret = np.moveaxis(psa_ret, 0, -1)
 
     # Fixed quantity
-    wollaston_ret = sum_of_2d_modes_wrapper(basis_psa, psa_dia_coeffs_ret)[0]
-    wollaston_ang = sum_of_2d_modes_wrapper(basis_psa, psa_dia_coeffs_ang)[0]
+    # wollaston_ret = sum_of_2d_modes_wrapper(basis_psa, psa_dia_coeffs_ret)[0]
+    # wollaston_ang = sum_of_2d_modes_wrapper(basis_psa, psa_dia_coeffs_ang)[0]
     psg_pol = linear_polarizer(psg_pol_angle)
-    psa_pol = linear_polarizer(psa_pol_angle) @ linear_retarder(wollaston_ang, wollaston_ret, shape=[*psg_angles.shape])
+    psa_pol = linear_polarizer(psa_pol_angle)
+    # psa_pol = linear_polarizer(psa_pol_angle) @ linear_retarder(wollaston_ang, wollaston_ret, shape=[*psg_angles.shape])
     # psa_pol = linear_diattenuator(psa_dia, psa_pol_angle, shape=[*psg_angles.shape])
     
     # I believe this rotates

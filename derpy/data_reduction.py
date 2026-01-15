@@ -829,8 +829,8 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             binned_images_right = []
             for i, img in enumerate(images):
 
-                binned_left = bin_array_2d(img[0], bin, method='median')
-                binned_right = bin_array_2d(img[1], bin, method='median')
+                binned_left = bin_array_2d(img[0], bin, method='mean')
+                binned_right = bin_array_2d(img[1], bin, method='mean')
                 binned_images_left.append(binned_left)
                 binned_images_right.append(binned_right)
 
@@ -845,7 +845,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             binned_images_left = []
             for i, img in enumerate(images):
 
-                binned_left = bin_array_2d(img, bin, method='median')
+                binned_left = bin_array_2d(img, bin, method='mean')
                 binned_images_left.append(binned_left)
 
             images = np.asarray(binned_images_left)
