@@ -34,9 +34,6 @@ from derpy.mask import (
     create_circular_obscuration
 )
 
-# Options for cost functions
-from prysm.x.optym.cost import bias_and_gain_invariant_error
-
 
 """
 USER INPUTS
@@ -45,15 +42,16 @@ USER INPUTS
 CHANNEL = "Left" # Right, Both
 
 NMODES = 1
-TOL = 1e-10 # adjusts both function and gradient tolerance, exits when EITHER are below this value
+TOL = 1e-7 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Just measuring air
-CAL_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
+CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+/ "calibration_data_2026-01-13_15-15-09.fits"
 
-DATA_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
+DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+/ "measurement_data_2026-01-13_15-18-36.fits"
 
+HANDEDNESS = 1
 """
 ----------------------------------------------------------
 """
@@ -136,6 +134,12 @@ psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
 # experiment PSG angles
 psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
 psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
+
+psg_angles = psg_angles * HANDEDNESS
+psa_angles = psa_angles * HANDEDNESS
+
+psg_angles_exp = psg_angles_exp * HANDEDNESS
+psa_angles_exp = psa_angles_exp * HANDEDNESS
 
 from derpy.calibrate import forward_model
 
