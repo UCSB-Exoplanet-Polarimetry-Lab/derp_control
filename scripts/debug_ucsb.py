@@ -1,9 +1,10 @@
 """
 This is a script that runs the pre-generation of rotated modal bases before calibrating
-using data from Dan Shanks' VIS-DERP at JPL's MDL
+Intended for debugging purposes showing the difference between the JPL data and the UCSB data
 """
 
 from numpy import exp
+from traitlets.config import t
 import derpy as derp
 from pathlib import Path
 import ipdb
@@ -27,8 +28,10 @@ from katsu.mueller import linear_retarder
 from derpy.calibrate import (
     create_modal_basis,
     sum_of_2d_modes_wrapper,
-    make_data_reduction_matrix
+    make_data_reduction_matrix,
+    forward_model
 )
+
 from derpy.mask import (
     create_circular_aperture,
     create_circular_obscuration
@@ -42,7 +45,7 @@ USER INPUTS
 CHANNEL = "Left" # Right, Both
 
 NMODES = 1
-TOL = 1e-10 # adjusts both function and gradient tolerance, exits when EITHER are below this value
+TOL = 1e-40 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Just measuring air
 CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
@@ -51,23 +54,26 @@ CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
 DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
 / "measurement_data_2026-01-13_15-18-36.fits"
 
+hdu_cal_ucsb = fits.open(CAL_DIR)
+hdu_data_ucsb = fits.open(DATA_DIR)
+
 # CAL_DIR = Path.home() / "Data/dans_data/" \
 # / "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
-#
+
 # DATA_DIR = Path.home() / "Data/dans_data/" \
 # / "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
 
+hdu_cal_jpl = fits.open(CAL_DIR)
+hdu_data_jpl = fits.open(DATA_DIR)
 
 # CAL_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
 # / "calibration_data_2026-01-15_13-32-33.fits"
 #
 # DATA_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
 # / "measurement_data_2026-01-15_13-36-36.fits"
+#
 
-HANDEDNESS = -1
-"""
-----------------------------------------------------------
-"""
+HANDEDNESS = -1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
 
 hdu_cal = fits.open(CAL_DIR)
 hdu_data = fits.open(DATA_DIR)
@@ -80,7 +86,7 @@ loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   use_photodiode=True)
 
 # Reduce the data
-binsize = 12
+binsize = 20
 out = loaded_data["Calibration"]
 out_exp = loaded_data["Measurement"]
 
@@ -104,12 +110,22 @@ reduced_exp, circle_params_exp = derp.reduce_data(out_exp,
 true_frames = reduced_cal
 exp_frames = reduced_exp
 
+def clean_frames(frames):
+    # Just turn them off, more likely to be at beam edges
+    frames[np.isnan(frames)] = 0
+    frames[np.isinf(frames)] = 0
+    return frames
+
+# What if we normalize by the first frame to account for illumination
+true_frames = true_frames / true_frames[0]
+true_frames = clean_frames(true_frames)
+
 # Generate polynomials
 NPIX = true_frames.shape[-1]
 
 # Create a mask from the circle parameters
 mask = np.ones_like(true_frames[0])
-mask[true_frames[0] < 1] = 0
+mask[true_frames[0] < 0.9] = 0
 # mask = np.zeros((NPIX, NPIX), dtype=int)
 y0, x0 = circle_params['center']
 radius = circle_params['radius'] / binsize # divide by bin amount
@@ -126,6 +142,7 @@ print(f"true frames shape = {true_frames.shape}")
 true_frames_masked = [i * mask for i in true_frames]
 true_frames = np.asarray(true_frames_masked)
 true_frames = np.moveaxis(true_frames, 0, -1)
+# true_frames = true_frames / np.max(true_frames)
 
 exp_frames_masked = [i * mask for i in exp_frames]
 exp_frames = np.asarray(exp_frames_masked)
@@ -133,11 +150,15 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(2 + 4*NMODES) / 10000
+x0 = np.random.random(3 + 4*NMODES)
+x0 = np.zeros(3 + 4*NMODES)
+
+# The input power term
+x0[0] = 1
 
 # ensures the piston term is quarter-wave to start / also need the second
-x0[2] = np.pi / 2
-x0[2 + 1*NMODES] = np.pi / 2
+x0[3] = np.pi / 2
+x0[3 + 1*NMODES] = np.pi / 2
 
 # x0[2 + 4*NMODES] = 0 # PSA is a polarizer
 # x0[2 + 4*NMODES+1:] = 0
@@ -160,7 +181,6 @@ plt.plot(psa_angles, label="PSA Angles")
 plt.plot(psg_angles_exp, label="PSG Angles Exp", linestyle="dashed")
 plt.plot(psa_angles_exp, label="PSA Angles Exp", linestyle="dashed")
 plt.legend()
-plt.show()
 
 from derpy.calibrate import forward_model
 
@@ -168,11 +188,6 @@ basis_withrotations_psg = []
 basis_withrotations_psa = []
 basis_withrotations_psg_exp = []
 basis_withrotations_psa_exp = []
-
-plt.figure()
-plt.title("Mask before basis creation")
-plt.imshow(mask)
-plt.colorbar()
 
 # Construct Calibration Basis
 for offset_psg, offset_psa in zip(psg_angles, psa_angles):
@@ -211,26 +226,12 @@ basis_masked_psa_exp = np.asarray(basis_withrotations_psa_exp)
 mode_to_show = NMODES-1
 angle_to_show = 4
 
-plt.figure(figsize=[16,4])
-plt.suptitle("Checking Modes")
-plt.subplot(141)
-plt.imshow(basis_masked_psg[angle_to_show, mode_to_show])
-plt.colorbar()
-plt.subplot(142)
-plt.imshow(basis_masked_psa[angle_to_show, mode_to_show])
-plt.colorbar()
-plt.subplot(143)
-plt.imshow(basis_masked_psg_exp[angle_to_show, mode_to_show])
-plt.colorbar()
-plt.subplot(144)
-plt.imshow(basis_masked_psa_exp[angle_to_show, mode_to_show])
-plt.colorbar()
-
 plt.figure()
 plt.title("Checking power frames masking")
 print("True frames shape =  ",true_frames.shape)
 plt.imshow(true_frames[...,0])
 plt.colorbar()
+
 # Clear memory
 del basis_withrotations_psg, basis_withrotations_psa
 del basis_withrotations_psg_exp, basis_withrotations_psa_exp
@@ -243,59 +244,43 @@ def GIE(I, D):
     t3 = np.sum(I ** 2)
     return 1 - t1 / (t2 * t3)
 
-
 def MSE(I, D):
     squared_error = (I - D) ** 2
-    return np.sum(squared_error)
+    return np.mean(squared_error)
 
 
-"""
-Cases
-- 1) Fit to only polarizer angles, retarder fast axis and retardance
-- 2) Fit to polarizer angles and diattenuation, retarder fast axis and retardance
-- 3) Fit to polarizer angles and diattenuation and retardance, retarder fast axis and retardance
-"""
+# Try plot the first few frames of true_frames
+plt.figure(figsize=[12, 3])
+for i in range(4):
+    plt.subplot(1, 4, i+1)
+    plt.imshow(true_frames[..., i], cmap="gray")
+    plt.title(f"True Frame {i}")
+    plt.colorbar()
 
-# def loss(x):
-#
-#     sim_frames = forward_model(x, basis_masked_psg, basis_masked_psa,
-#                                 psg_angles,
-#                                 dual_I=False,
-#                                 psa_angles=psa_angles)
-#
-#
-#     sim_array = np.asarray(sim_frames)
-#     true_array = np.asarray(true_frames)
-#     true_array = true_array / true_array.max()
-#     return MSE(sim_array[mask_extend==1], true_array[mask_extend==1])
 
+
+plt.figure()
+plt.plot(psg_angles, label="PSG")
+plt.plot(psa_angles, label="PSA")
+plt.legend()
 
 # Try a different loss where we normalize by the identity matrix
-
 def loss(x):
 
     true_array = np.asarray(true_frames)
-    true_array = true_array[..., np.newaxis]
 
-    # make the data reduction matrix model
-    Winv = make_data_reduction_matrix(x,
-                                      basis_masked_psg,
-                                      basis_masked_psa,
-                                      psg_angles=psg_angles,
-                                      psa_angles=psa_angles)
+    # Includes simulation of the DC power term
+    sim_array = forward_model(x,
+                            basis_masked_psg,
+                            basis_masked_psa,
+                            psg_angles,
+                            rotation_ratio=2.5,
+                            dual_I=False,
+                            psa_angles=psa_angles)
 
-    # Determine the Mueller matrix given the model
-    M_meas = Winv @ true_array
-    M_meas = M_meas[...,0] # cut off the last axis, which was there for matrix multiplication
-    M_meas = M_meas.reshape([*Winv.shape[:-2], 4, 4]) # make a Mueller matrix again
+    sim_array = sim_array * mask[..., None]
 
-    # Normalize using mask
-    M_meas = M_meas.at[mask==1.].set(M_meas[mask==1] / M_meas[mask==1, 0, 0, None, None]) # Normalize by the transmission element
-
-    # derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix", vmin=-1, vmax=1, cmap="RdBu_r")
-
-    # Compare to the identity matrix
-    return MSE(np.eye(4), M_meas[mask==1])
+    return MSE(true_array, sim_array)
 
 
 from time import perf_counter
@@ -310,11 +295,15 @@ print(f"gradient val = {g}")
 
 # Callback at every function initialization
 pbar = None # Initialize pbar globally or pass it as an argument
+funcvals = []
 def callback_function(xk):
     global pbar
     if pbar is None:
-        pbar = tqdm(desc="Optimization Progress") # Example total
+        pbar = tqdm(desc=f"Optimization Progress f={loss(xk)}") # Example total
     pbar.update(1) # Increment the progress bar
+    f = loss(xk)
+    pbar.set_description(f"Optimization Progress f={f}") # Example total
+    funcvals.append(f)
 
 results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                     callback=callback_function,
@@ -324,29 +313,27 @@ results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
 if pbar is not None:
     pbar.close()
 
-print(results.message)
+plt.figure()
+plt.plot(funcvals, marker="o")
+plt.title(results.message)
+plt.yscale("log")
+plt.ylabel("Mean Squared Error")
+plt.xlabel("Function Evaluations")
+print(results.x)
 
 # extract the retarder coeffs
-psg_ret_coeffs = results.x[2 : 2+len(basis)]
+offset = 3
+psg_ret_coeffs = results.x[offset : offset + len(basis)]
 psg_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked_psg, psg_ret_coeffs)[0]
 
-psa_ret_coeffs = results.x[2 + len(basis) : 2 + 2*len(basis)]
+psa_ret_coeffs = results.x[offset + len(basis) : offset + 2*len(basis)]
 psa_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_ret_coeffs)[0]
 
-psg_ang_coeffs = results.x[2 + 2 * len(basis) : 2 + 3 * len(basis)]
+psg_ang_coeffs = results.x[offset + 2 * len(basis) : offset + 3 * len(basis)]
 psg_angle_estimate = sum_of_2d_modes_wrapper(basis_masked_psg, psg_ang_coeffs)[0]
 
-psa_ang_coeffs = results.x[2 + 3 * len(basis) : 2 + 4 * len(basis)]
+psa_ang_coeffs = results.x[offset + 3 * len(basis) : offset + 4 * len(basis)]
 psa_angle_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_ang_coeffs)[0]
-
-# psa_dia_coeffs = results.x[2 + 4 * len(basis) : 2 + 5 * len(basis)]
-# psa_dia_estimate = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs)[0]
-#
-# psa_dia_coeffs_ret = results.x[2 + 5 * len(basis) : 2 + 6 * len(basis)]
-# psa_dia_estimate_ret = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ret)[0]
-#
-# psa_dia_coeffs_ang = results.x[2 + 6 * len(basis) : 2 + 7 * len(basis)]
-# psa_dia_estimate_ang = sum_of_2d_modes_wrapper(basis_masked_psa, psa_dia_coeffs_ang)[0]
 
 plt.figure()
 plt.subplot(131)
@@ -384,35 +371,6 @@ plt.plot(psg_ang_coeffs, label="PSG coefficients", marker="x")
 plt.plot(psa_ang_coeffs, label="PSA coefficients", marker="x")
 plt.legend()
 
-# plt.figure()
-# plt.subplot(121)
-# plt.title("Estimated PSA Diattenutation")
-# plt.imshow(psa_dia_estimate / mask)
-# plt.colorbar()
-# plt.xticks([], [])
-# plt.yticks([], [])
-# plt.subplot(122)
-# plt.plot(psa_dia_coeffs, label="Wollaston Diattenuation coefficients", marker="x")
-# plt.legend()
-#
-# plt.figure()
-# plt.subplot(131)
-# plt.title("Estimated Wollaston Retardance")
-# plt.imshow(psa_dia_estimate_ret / mask, cmap="RdBu_r")
-# plt.colorbar()
-# plt.xticks([], [])
-# plt.yticks([], [])
-# plt.subplot(132)
-# plt.title("Estimated Wollaston Retarder Angle")
-# plt.imshow(psa_dia_estimate_ang / mask, cmap="RdBu_r")
-# plt.colorbar()
-# plt.xticks([], [])
-# plt.yticks([], [])
-# plt.subplot(133)
-# plt.plot(psa_dia_coeffs_ret, label="PSG coefficients", marker="x")
-# plt.plot(psa_dia_coeffs_ang, label="PSA coefficients", marker="x")
-# plt.legend()
-
 # Running out of GPU memory oops
 del psg_retarder_estimate, psa_retarder_estimate
 
@@ -423,22 +381,21 @@ sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
                             dual_I=False,
                             psa_angles=psa_angles)
 
-
 # perform a comparison via mean power
 # NOTE I've commited a heinous crime with the following lines of code, please
 # forgive me. To help explain, I wanted to do list comprehension over the last
 # axis of the `sim_frames` and `true_frames` arrays. This was the most concise
 # way I could think of doing so
-mean_simulated = [np.mean(i[mask==1]) for i in np.moveaxis(sim_frames, -1, 0)]
-mean_observed = [np.mean(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
+mean_simulated = [np.nanmean(i[mask==1]) for i in np.moveaxis(sim_frames, -1, 0)]
+mean_observed = [np.nanmean(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
 mean_simulated = np.asarray(mean_simulated)
 mean_observed = np.asarray(mean_observed)
 psg_angles_plot = psg_angles
 
 plt.figure()
-plt.title("max-normalized power observed")
-plt.plot(np.degrees(psg_angles_plot), mean_simulated / mean_simulated.max(), label="Fit Power", marker="x")
-plt.plot(np.degrees(psg_angles_plot), mean_observed / mean_observed.max(), label="Measured Power",
+plt.title("first-frame normalized power observed")
+plt.plot(np.degrees(psg_angles_plot), mean_simulated, label="Fit Power", marker="x")
+plt.plot(np.degrees(psg_angles_plot), mean_observed, label="Measured Power",
                                                 marker="o", linestyle=None)
 plt.ylabel("power")
 plt.xlabel("PSG Angle, deg")
@@ -447,20 +404,21 @@ plt.legend()
 # Perform polarimetric data reduction before and after calibration
 spatial_cal_results = results.x.copy()
 
-plt.figure(figsize=[16,4])
-plt.suptitle("Checking Modes Experiment")
-plt.subplot(141)
-plt.imshow(basis_masked_psg[angle_to_show, mode_to_show])
-plt.colorbar()
-plt.subplot(142)
-plt.imshow(basis_masked_psa[angle_to_show, mode_to_show])
-plt.colorbar()
-plt.subplot(143)
-plt.imshow(basis_masked_psg_exp[angle_to_show, mode_to_show])
-plt.colorbar()
-plt.subplot(144)
-plt.imshow(basis_masked_psa_exp[angle_to_show, mode_to_show])
-plt.colorbar()
+Winv = make_data_reduction_matrix(results.x,
+                                basis_masked_psg,
+                                basis_masked_psa,
+                                psg_angles=psg_angles,
+                                psa_angles=psa_angles)
+
+# Determine the Mueller matrix given the model
+ipdb.set_trace()
+true_array = np.asarray(true_frames)
+true_array = true_array[..., np.newaxis]
+M_meas = Winv @ true_array
+M_meas = M_meas[...,0] # cut off the last axis, which was there for matrix multiplication
+M_meas = M_meas.reshape([*Winv.shape[:-2], 4, 4]) # make a Mueller matrix again
+M_meas /= M_meas[..., 0, 0, None, None]
+derp.plot_4x4_grid(M_meas, title="Should be Identity", vmin=-1, vmax=1, cmap="RdBu_r")
 
 Winv = make_data_reduction_matrix(results.x,
                                     basis_masked_psg_exp,
@@ -469,8 +427,6 @@ Winv = make_data_reduction_matrix(results.x,
                                     rotation_ratio=2.5,
                                     dual_I=False,
                                     psa_angles=psa_angles_exp)
-
-
 true_array = np.asarray(exp_frames)
 true_array = true_array[..., np.newaxis]
 

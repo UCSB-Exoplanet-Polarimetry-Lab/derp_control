@@ -768,7 +768,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
 
                 # apply shift to current image
                 images[i] = shift(images[i], shift=(shift_y, shift_x), mode='wrap')
-    
+
     # Perform power normalization now that frames are co-registered
     if not use_photodiode:
         images = np.swapaxes(images, 0, 1)
@@ -789,11 +789,12 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             images[i, 0] = set[0] # [zero_mask]
             images[i, 1] = set[1] # [zero_mask]
     else:
-        p_ref_0 = powers_total[0]
 
         # Find frame where power is maximized
         max_idx = len(powers_total) - int(np.where(powers_total==np.max(powers_total))[0]) - 1
-        print(max_idx)
+
+        p_ref_0 = powers_total[0]
+        p_ref_0 = powers_total[max_idx]
 
         for i, img in enumerate(images):
 
@@ -804,7 +805,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             # apply image mask
             if mask is not None:
                 img = img * mask
-            
+
             # In the non-photodiode case this has a 1/2, but because we are normalizing to
             # A single frame (instead of a sum) this is /4
             # print(images.shape)
@@ -819,7 +820,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             # plt.colorbar()
             # plt.show()
             # np.mean(images[max_idx][mask==1]) /
-            set = img * p_ref / p_ref_0 /  4
+            set = img * p_ref / p_ref_0 #/  4
             images[i] = set
 
     # Bin the image if binning is specified
@@ -838,7 +839,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
 
         else:
             images = np.swapaxes(images, 0, 1)
-    
+
     # only need to bin left
     else:
         if bin is not None:
@@ -945,14 +946,14 @@ def load_fits_data(measurement_pth, calibration_pth,
             print(images_left.shape)
             print(images_right.shape)
             good_images = np.array([images_left, images_right])
-        
+
         # Use photodiode for power tracking, only pulls frame on left
         else:
             x1, y1, x2, y2 = selected_coordinates[0]
             good_images = power_measurement[..., y1:y2, x1:x2]
             good_powers_left = np.median(good_images, axis=(1, 2))
             good_powers_right = None
-            
+
             # Load the photodiode, median first dimension
             if measurement["PSA_POWER_METER"].data.ndim > 1:
                 good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
@@ -965,7 +966,7 @@ def load_fits_data(measurement_pth, calibration_pth,
         else:
             psg_angles = measurement["PSG_ENCODER_ANGLES"]
             psa_angles = measurement["PSA_ENCODER_ANGLES"]
-        
+
 
         experiment_data = {
             "images": good_images,
