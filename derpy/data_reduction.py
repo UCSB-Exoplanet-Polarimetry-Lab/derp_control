@@ -1,4 +1,5 @@
 from astropy.io import fits
+import numpy as tnp
 from katsu.katsu_math import broadcast_kron, np
 from katsu.mueller import linear_polarizer, linear_retarder, linear_diattenuator
 from skimage.registration import phase_cross_correlation
@@ -855,17 +856,16 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
     return images, circle_params
 
 
-def load_fits_data(measurement_pth, calibration_pth,
+def load_fits_data(measurement_pth, 
                    dark_pth=None, use_encoder=False, reference_channel="Left",
-                   centering_ref_img=0, use_photodiode=False):
+                   centering_ref_img=0, use_photodiode=False, coordinates=None,
+                   label=None):
     """load data from .fits file experiments
 
     Parameters
     ----------
     measurement_pth: str or PosixPath
         Path to the .fits file containing the measured data
-    calibration_pth: str or PosixPath
-        Path to the .fits file containing the calibration data
     dark_pth: str or PosixPath
         Path to the .fits file containing the dark frame, optional.
         Defaults to None. Currently not supported
@@ -874,12 +874,24 @@ def load_fits_data(measurement_pth, calibration_pth,
         data acquisition, optional. Defaults to False. If True, the measurement
         and calibration .fits files need to have the "PSG_ENCODER_ANGLES" and
         "PSA_ENCODER_ANGLES" ImageHDU.
+    use_photodiode: bool
+        Whether to use photodiode measurements stored in the FITS experiment.
+        The measurement files need to have the "PSA_POWER_METER" header for
+        this to work. If False, assumes there are two beams on the 
+    coordinates: str
+        Path to an `image_selection.json` to pull coordinates from. If None, 
+        it will either pull the `image_selection.json` corresponding to the
+        `measurement_pth`, or launch the image_selector GUI to create an
+        `image_selection.json`.
+    label: int or str
+        label to append to the `image_selection.json` to distinguish it from
+        other coordinate data. If none, generates a random 4 digit integer to
+        append to the image selection data. 
 
     Returns
     -------
     dict
-        Dictionary keyed by experiment (calibration, measurement) containing the experimental
-        data for later data reduction.
+        Dictionary  containing the experimental data for later data reduction.
 
     """
 
@@ -905,84 +917,89 @@ def load_fits_data(measurement_pth, calibration_pth,
     else:
         raise ValueError(f"Channel {reference_channel} is not in 'Left'/'Right' or 0/1")
 
-    drrp_raw_data = {}
-    pths = [calibration_pth, measurement_pth]
-    experiment_keys = ["Calibration", "Measurement"]
+    if label is None:
+        label = tnp.random.randint(0, 10_000)
 
-    for pth, key in zip(pths, experiment_keys):
+    if isinstance(label, int):
+        label = f"{label:04d}"
 
-        # Load the data
-        measurement = fits.open(pth)
-        power_measurement = measurement["PSA_IMAGES"].data
+    pth = measurement_pth
 
-        # Subaperture based on the Calibration file
-        if key == "Calibration":
+    # Load the data
+    measurement = fits.open(pth)
+    power_measurement = measurement["PSA_IMAGES"].data
 
-            # check to see if there's a path called "image_selection.json"
-            if os.path.exists("image_selection.json"):
-                with open("image_selection.json", "r") as f:
-                    selected_coordinates = json.load(f)
-            else:
-                selected_areas, selected_coordinates = launch_image_selector(power_measurement[centering_ref_img], use_photodiode)
-                # Save the selected areas
-                with open("image_selection.json", "w") as f:
-                    json.dump(selected_coordinates, f)
+    # If centering data is not specified
+    if coordinates is None:
 
-        # Use Wollaston for power tracking, requires both frames
-        if not use_photodiode:
-            x1, y1, x2, y2 = selected_coordinates[0]
-            images_left = power_measurement[..., y1:y2, x1:x2]
-            powers_left = np.median(images_left, axis=(1, 2))
+        # check to see if there's a path called "image_selection.json" with the right label
+        if os.path.exists(f"image_selection_{label}.json"):
+            with open(f"image_selection_{label}.json", "r") as f:
+                selected_coordinates = json.load(f)
 
-            x1, y1, x2, y2 = selected_coordinates[1]
-            images_right = power_measurement[..., y1:y2, x1:x2]
-            powers_right = np.median(images_right, axis=(1, 2))
-
-            # There should be some frame filtering here
-            good_powers_right = powers_right
-            good_powers_left = powers_left
-            good_powers_total = powers_right + powers_left
-            print(power_measurement.shape)
-            print(images_left.shape)
-            print(images_right.shape)
-            good_images = np.array([images_left, images_right])
-
-        # Use photodiode for power tracking, only pulls frame on left
+        # If not, make a new file and dump the centering there
         else:
-            x1, y1, x2, y2 = selected_coordinates[0]
-            good_images = power_measurement[..., y1:y2, x1:x2]
-            good_powers_left = np.median(good_images, axis=(1, 2))
-            good_powers_right = None
+            selected_areas, selected_coordinates = launch_image_selector(power_measurement[centering_ref_img],
+                                                                        use_photodiode)
+            
+            # Save the selected areas
+            with open(f"image_selection_{label}.json", "w") as f:
+                json.dump(selected_coordinates, f)
+    
+    # If centering data _is_ specified, just load it
+    else:
+        with open(coordinates, "r") as f:
+            selected_coordinates = json.load(f)
+    
+    # Use Wollaston for power tracking, requires both frames
+    if not use_photodiode:
+        x1, y1, x2, y2 = selected_coordinates[0]
+        images_left = power_measurement[..., y1:y2, x1:x2]
+        powers_left = np.median(images_left, axis=(1, 2))
 
-            # Load the photodiode, median first dimension
-            if measurement["PSA_POWER_METER"].data.ndim > 1:
-                good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
-            else:
-                good_powers_total = measurement["PSA_POWER_METER"].data
+        x1, y1, x2, y2 = selected_coordinates[1]
+        images_right = power_measurement[..., y1:y2, x1:x2]
+        powers_right = np.median(images_right, axis=(1, 2))
 
-        if not use_encoder:
-            psg_angles = measurement["PSG_COMMAND_ANGLES"]
-            psa_angles = measurement["PSA_COMMAND_ANGLES"]
+        # There should be some frame filtering here
+        good_powers_right = powers_right
+        good_powers_left = powers_left
+        good_powers_total = powers_right + powers_left
+        good_images = np.array([images_left, images_right])
+
+    # Use photodiode for power tracking, only pulls frame on left
+    else:
+        x1, y1, x2, y2 = selected_coordinates[0]
+        good_images = power_measurement[..., y1:y2, x1:x2]
+        good_powers_left = np.median(good_images, axis=(1, 2))
+        good_powers_right = None
+
+        # Load the photodiode, median first dimension
+        if measurement["PSA_POWER_METER"].data.ndim > 1:
+            good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
         else:
-            psg_angles = measurement["PSG_ENCODER_ANGLES"]
-            psa_angles = measurement["PSA_ENCODER_ANGLES"]
+            good_powers_total = measurement["PSA_POWER_METER"].data
 
+    if not use_encoder:
+        psg_angles = measurement["PSG_COMMAND_ANGLES"]
+        psa_angles = measurement["PSA_COMMAND_ANGLES"]
+    else:
+        psg_angles = measurement["PSG_ENCODER_ANGLES"]
+        psa_angles = measurement["PSA_ENCODER_ANGLES"]
 
-        experiment_data = {
-            "images": good_images,
-            "psg_angles": psg_angles,
-            "psa_angles": psa_angles,
-            "powers_left": good_powers_left,
-            "powers_right": good_powers_right,
-            "powers_total": good_powers_total,
-            "reference_channel": reference_channel,
-            "other_channel": other_channel,
-            "use_photodiode": use_photodiode
-        }
+    experiment_data = {
+        "images": good_images,
+        "psg_angles": psg_angles,
+        "psa_angles": psa_angles,
+        "powers_left": good_powers_left,
+        "powers_right": good_powers_right,
+        "powers_total": good_powers_total,
+        "reference_channel": reference_channel,
+        "other_channel": other_channel,
+        "use_photodiode": use_photodiode
+    }
 
-        drrp_raw_data[key] = experiment_data
-
-    return drrp_raw_data
+    return experiment_data 
 
 
 # def subaperture_fits_data(drrp_raw_data):

@@ -79,19 +79,19 @@ hdu_cal = fits.open(CAL_DIR)
 hdu_data = fits.open(DATA_DIR)
 
 # Get the experiment dictionaries
-loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
-                                  calibration_pth=CAL_DIR,
+out = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   use_encoder=True,
                                   centering_ref_img=10,
                                   use_photodiode=True)
 
+out_exp = derp.load_fits_data(measurement_pth=CAL_DIR,
+                                  use_encoder=True,
+                                  centering_ref_img=10,
+                                  use_photodiode=True)
 # Reduce the data
 binsize = 20
-out = loaded_data["Calibration"]
-out_exp = loaded_data["Measurement"]
 
 # make a mask
-print(out["images"].shape)
 before_bin_mask = np.zeros_like(out["images"][0])
 x = np.linspace(-1, 1, before_bin_mask.shape[0])
 x, y = np.meshgrid(x, x)
@@ -411,7 +411,6 @@ Winv = make_data_reduction_matrix(results.x,
                                 psa_angles=psa_angles)
 
 # Determine the Mueller matrix given the model
-ipdb.set_trace()
 true_array = np.asarray(true_frames)
 true_array = true_array[..., np.newaxis]
 M_meas = Winv @ true_array
