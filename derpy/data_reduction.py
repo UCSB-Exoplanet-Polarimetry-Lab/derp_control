@@ -8,6 +8,7 @@ import ipdb
 import os
 import json
 import matplotlib.pyplot as plt
+from warnings import warn
 
 from .gui import launch_image_selector
 from .centering import robust_circle_fit
@@ -792,10 +793,12 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
     else:
 
         # Find frame where power is maximized
-        print(powers_total)
         wheremax = np.where(powers_total == np.max(powers_total))
-        print(wheremax)
-        max_idx = len(powers_total) - int(np.where(powers_total==np.max(powers_total))[0]) - 1
+        if not isinstance(wheremax, int):
+            wheremax = np.median(wheremax)
+            wheremax = int(wheremax)
+
+        max_idx = len(powers_total) - wheremax - 1
 
         p_ref_0 = powers_total[0]
         p_ref_0 = powers_total[max_idx]
@@ -862,7 +865,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
 def load_fits_data(measurement_pth,
                    dark_pth=None, use_encoder=False, reference_channel="Left",
                    centering_ref_img=0, use_photodiode=False, coordinates=None,
-                   label=None):
+                   label=None, mask_frames=None):
     """load data from .fits file experiments
 
     Parameters
@@ -890,7 +893,9 @@ def load_fits_data(measurement_pth,
         label to append to the `image_selection.json` to distinguish it from
         other coordinate data. If none, generates a random 4 digit integer to
         append to the image selection data.
-
+    frames_mask: list or int
+        List of frame indices to mask (removed from power and angles) at the end
+        of the reduction.
     Returns
     -------
     dict
@@ -983,7 +988,8 @@ def load_fits_data(measurement_pth,
         else:
             good_powers_total = measurement["PSA_POWER_METER"].data
             if np.sum(good_powers_total) == 0:
-                raise ValueError("Photodiode power measurements are all zero. Check the 'PSA_POWER_METER' header and data in the FITS file.")
+                warn("Photodiode power measurements are all zero. Check the 'PSA_POWER_METER' header and data in the FITS file. \n setting to ones...")
+                good_powers_total = np.ones_like(good_powers_total)
 
     if not use_encoder:
         psg_angles = measurement["PSG_COMMAND_ANGLES"]
@@ -991,6 +997,30 @@ def load_fits_data(measurement_pth,
     else:
         psg_angles = measurement["PSG_ENCODER_ANGLES"]
         psa_angles = measurement["PSA_ENCODER_ANGLES"]
+
+    # Make sure the data are arrays
+    psg_angles = np.asarray(psg_angles.data)
+    psa_angles = np.asarray(psa_angles.data)
+    good_powers_left = np.asarray(good_powers_left)
+    if good_powers_right is not None:
+        good_powers_right = np.asarray(good_powers_right)
+    good_powers_total = np.asarray(good_powers_total)
+    good_images = np.asarray(good_images)
+
+    if mask_frames is not None:
+        if isinstance(mask_frames, int):
+            mask_frames = [mask_frames]
+
+        for frame in mask_frames:
+            psg_angles = np.delete(psg_angles, frame)
+            psa_angles = np.delete(psa_angles, frame)
+            good_powers_left = np.delete(good_powers_left, frame)
+            if good_powers_right is not None:
+                good_powers_right = np.delete(good_powers_right, frame)
+            good_powers_total = np.delete(good_powers_total, frame)
+            print(good_images.shape)
+            good_images = np.delete(good_images, frame, axis=0)
+            print(good_images.shape)
 
     experiment_data = {
         "images": good_images,

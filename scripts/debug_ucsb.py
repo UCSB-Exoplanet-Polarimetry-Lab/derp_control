@@ -44,21 +44,22 @@ USER INPUTS
 """
 CHANNEL = "Left" # Right, Both
 
-NMODES = 1
+NMODES = 32
 TOL = 1e-40 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Just measuring air
-CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-/ "calibration_data_2026-01-13_15-15-09.fits"
-
-DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-/ "measurement_data_2026-01-13_15-18-36.fits"
-
 # CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-# / "calibration_data_2026-01-13_10-54-38.fits"
+# / "calibration_data_2026-01-13_15-15-09.fits"
 
 # DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-# / "measurement_data_2026-01-13_11-06-20.fits"
+# / "measurement_data_2026-01-13_15-18-36.fits"
+
+# 1429, mask_frames=[0]
+CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+/ "calibration_data_2026-01-13_10-54-38.fits"
+
+DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+/ "measurement_data_2026-01-13_11-06-20.fits"
 
 # hdu_cal_ucsb = fits.open(CAL_DIR)
 # hdu_data_ucsb = fits.open(DATA_DIR)
@@ -72,28 +73,29 @@ DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
 # hdu_cal_jpl = fits.open(CAL_DIR)
 # hdu_data_jpl = fits.open(DATA_DIR)
 
-# 914
-# CAL_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
-# / "calibration_data_2026-01-15_13-32-33.fits"
+# 1149
+CAL_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
+/ "calibration_data_2026-01-15_13-32-33.fits"
 
-# 3346
-# DATA_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
-# / "measurement_data_2026-01-15_13-36-36.fits"
+# 7154
+DATA_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
+/ "measurement_data_2026-01-15_13-36-36.fits"
 
 HANDEDNESS = -1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
 
 # Get the experiment dictionaries
 out = derp.load_fits_data(measurement_pth=CAL_DIR,
                                   use_encoder=True,
-                                  centering_ref_img=10,
+                                  centering_ref_img=2,
                                   use_photodiode=True,
-                                  label=914)
+                                  label=None,
+                                  mask_frames=None)
 
 out_exp = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   use_encoder=True,
-                                  centering_ref_img=10,
+                                  centering_ref_img=2,
                                   use_photodiode=True,
-                                  label=3346)
+                                  label=None)
 # Reduce the data
 binsize = 20
 
@@ -131,7 +133,7 @@ NPIX = true_frames.shape[-1]
 
 # Create a mask from the circle parameters
 mask = np.ones_like(true_frames[0])
-mask[true_frames[0] < 0.9] = 0
+mask[true_frames[0] < 0.8] = 0
 # mask = np.zeros((NPIX, NPIX), dtype=int)
 y0, x0 = circle_params['center']
 radius = circle_params['radius'] / binsize # divide by bin amount
@@ -148,7 +150,6 @@ print(f"true frames shape = {true_frames.shape}")
 true_frames_masked = [i * mask for i in true_frames]
 true_frames = np.asarray(true_frames_masked)
 true_frames = np.moveaxis(true_frames, 0, -1)
-# true_frames = true_frames / np.max(true_frames)
 
 exp_frames_masked = [i * mask for i in exp_frames]
 exp_frames = np.asarray(exp_frames_masked)
@@ -168,12 +169,12 @@ x0[3 + 1*NMODES] = np.pi / 2
 
 # x0[2 + 4*NMODES] = 0 # PSA is a polarizer
 # x0[2 + 4*NMODES+1:] = 0
-psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
-psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
+psg_angles = np.radians(out['psg_angles'].astype(np.float64))
+psa_angles = np.radians(out['psa_angles'].astype(np.float64))
 
 # experiment PSG angles
-psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
-psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
+psg_angles_exp = np.radians(out_exp['psg_angles'].astype(np.float64))
+psa_angles_exp = np.radians(out_exp['psa_angles'].astype(np.float64))
 
 psg_angles = psg_angles * HANDEDNESS
 psa_angles = psa_angles * HANDEDNESS
