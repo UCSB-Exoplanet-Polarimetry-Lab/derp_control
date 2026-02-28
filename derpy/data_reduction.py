@@ -792,6 +792,9 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
     else:
 
         # Find frame where power is maximized
+        print(powers_total)
+        wheremax = np.where(powers_total == np.max(powers_total))
+        print(wheremax)
         max_idx = len(powers_total) - int(np.where(powers_total==np.max(powers_total))[0]) - 1
 
         p_ref_0 = powers_total[0]
@@ -856,7 +859,7 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
     return images, circle_params
 
 
-def load_fits_data(measurement_pth, 
+def load_fits_data(measurement_pth,
                    dark_pth=None, use_encoder=False, reference_channel="Left",
                    centering_ref_img=0, use_photodiode=False, coordinates=None,
                    label=None):
@@ -877,16 +880,16 @@ def load_fits_data(measurement_pth,
     use_photodiode: bool
         Whether to use photodiode measurements stored in the FITS experiment.
         The measurement files need to have the "PSA_POWER_METER" header for
-        this to work. If False, assumes there are two beams on the 
+        this to work. If False, assumes there are two beams on the
     coordinates: str
-        Path to an `image_selection.json` to pull coordinates from. If None, 
+        Path to an `image_selection.json` to pull coordinates from. If None,
         it will either pull the `image_selection.json` corresponding to the
         `measurement_pth`, or launch the image_selector GUI to create an
         `image_selection.json`.
     label: int or str
         label to append to the `image_selection.json` to distinguish it from
         other coordinate data. If none, generates a random 4 digit integer to
-        append to the image selection data. 
+        append to the image selection data.
 
     Returns
     -------
@@ -941,16 +944,16 @@ def load_fits_data(measurement_pth,
         else:
             selected_areas, selected_coordinates = launch_image_selector(power_measurement[centering_ref_img],
                                                                         use_photodiode)
-            
+
             # Save the selected areas
             with open(f"image_selection_{label}.json", "w") as f:
                 json.dump(selected_coordinates, f)
-    
+
     # If centering data _is_ specified, just load it
     else:
         with open(coordinates, "r") as f:
             selected_coordinates = json.load(f)
-    
+
     # Use Wollaston for power tracking, requires both frames
     if not use_photodiode:
         x1, y1, x2, y2 = selected_coordinates[0]
@@ -979,6 +982,8 @@ def load_fits_data(measurement_pth,
             good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
         else:
             good_powers_total = measurement["PSA_POWER_METER"].data
+            if np.sum(good_powers_total) == 0:
+                raise ValueError("Photodiode power measurements are all zero. Check the 'PSA_POWER_METER' header and data in the FITS file.")
 
     if not use_encoder:
         psg_angles = measurement["PSG_COMMAND_ANGLES"]
@@ -999,7 +1004,7 @@ def load_fits_data(measurement_pth,
         "use_photodiode": use_photodiode
     }
 
-    return experiment_data 
+    return experiment_data
 
 
 # def subaperture_fits_data(drrp_raw_data):

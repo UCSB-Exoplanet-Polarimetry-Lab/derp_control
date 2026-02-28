@@ -54,8 +54,14 @@ CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
 DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
 / "measurement_data_2026-01-13_15-18-36.fits"
 
-hdu_cal_ucsb = fits.open(CAL_DIR)
-hdu_data_ucsb = fits.open(DATA_DIR)
+# CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+# / "calibration_data_2026-01-13_10-54-38.fits"
+
+# DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
+# / "measurement_data_2026-01-13_11-06-20.fits"
+
+# hdu_cal_ucsb = fits.open(CAL_DIR)
+# hdu_data_ucsb = fits.open(DATA_DIR)
 
 # CAL_DIR = Path.home() / "Data/dans_data/" \
 # / "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
@@ -63,31 +69,31 @@ hdu_data_ucsb = fits.open(DATA_DIR)
 # DATA_DIR = Path.home() / "Data/dans_data/" \
 # / "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
 
-hdu_cal_jpl = fits.open(CAL_DIR)
-hdu_data_jpl = fits.open(DATA_DIR)
+# hdu_cal_jpl = fits.open(CAL_DIR)
+# hdu_data_jpl = fits.open(DATA_DIR)
 
+# 914
 # CAL_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
 # / "calibration_data_2026-01-15_13-32-33.fits"
-#
+
+# 3346
 # DATA_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
 # / "measurement_data_2026-01-15_13-36-36.fits"
-#
 
 HANDEDNESS = -1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
 
-hdu_cal = fits.open(CAL_DIR)
-hdu_data = fits.open(DATA_DIR)
-
 # Get the experiment dictionaries
-out = derp.load_fits_data(measurement_pth=DATA_DIR,
+out = derp.load_fits_data(measurement_pth=CAL_DIR,
                                   use_encoder=True,
                                   centering_ref_img=10,
-                                  use_photodiode=True)
+                                  use_photodiode=True,
+                                  label=914)
 
-out_exp = derp.load_fits_data(measurement_pth=CAL_DIR,
+out_exp = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   use_encoder=True,
                                   centering_ref_img=10,
-                                  use_photodiode=True)
+                                  use_photodiode=True,
+                                  label=3346)
 # Reduce the data
 binsize = 20
 
