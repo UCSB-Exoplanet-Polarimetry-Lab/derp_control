@@ -20,11 +20,11 @@ EXPERIMENT PARAMETERS DEFINED BY USER
 --------------------------------
 """
 
-ANGULAR_STEP = 3.6  # degrees
-ANGULAR_RATIO = 2.5  # degrees
-N_CAL_MEASUREMENTS = 24
+ANGULAR_STEP = 7.2  # degrees
+ANGULAR_RATIO = 2.5  
+N_CAL_MEASUREMENTS = 50
 N_MEASUREMENTS = 50
-DATA_PATH = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC"
+DATA_PATH = Path.home() / "Data/Derpy/03-05-2026/Microscope_Objective"
 TINT = 50 # milliseconds
 FPS = 10
 SET_TEMPERATURE = None  # degrees Celsius
@@ -34,7 +34,7 @@ N_MEDIANS_DARK = 10
 N_MEDIANS = 10
 DARK_SUBTRACT = True # Subtract dark frames from images
 SAVE_PSG_IMGS = False # Save PSG images
-EXPERIMENT_NAME = "J_band_VVC_VRRP"
+EXPERIMENT_NAME = "romantic_microscope_smooch2"
 """
 ---------------------------------
 """
@@ -48,6 +48,7 @@ if __name__ == "__main__":
 
     # Init camera connection with default settings
     cam = ZWOASI(tint=TINT, fps=FPS)
+    opm = OPM() 
 
     # Take a dark
     _ = input("Turn off laser and press ENTER to take a dark image: ")
@@ -62,17 +63,17 @@ if __name__ == "__main__":
     psg = BaseZaberStage(zaber_connection, VRRP_PSG_ROTATION_STAGE_ID)
     psa = BaseZaberStage(zaber_connection, VRRP_PSA_ROTATION_STAGE_ID)
 
-    # Home the stages
-    print("Homing the stages...")
-    psg.home()
-    psa.home()
-
     nums = [N_CAL_MEASUREMENTS, N_MEASUREMENTS]
-    labels = ["Calibration", "Measurement"]
-
+    # labels = ["Calibration", "Measurement"]
+    labels = ["Measurement", "Calibration"]
 
     # Begin calibration
     for experiment, N in zip(labels, nums):
+        
+        # Home the stages
+        print("Homing the stages...")
+        psg.home()
+        psa.home()
     
         # images after stage moves,
         # NOTE that we do polarimetric data reduction on the PSA images
@@ -107,7 +108,7 @@ if __name__ == "__main__":
 
             if SAVE_PSG_IMGS:
 
-                imstack, _ = cam.take_many_images(N_MEDIANS)
+                imstack, _ = cam.take_many_images(N_MEDIANS, OPM=opm)
 
                 if DARK_SUBTRACT:
                     imstack_darksub = [im - dark for im in imstack]
@@ -126,7 +127,7 @@ if __name__ == "__main__":
             if i != 0:
                 psa.step(ANGULAR_STEP * ANGULAR_RATIO)
 
-            imstack, psa_power = cam.take_many_images(N_MEDIANS)
+            imstack, psa_power = cam.take_many_images(N_MEDIANS, OPM=opm)
 
             if DARK_SUBTRACT:
                 imstack_darksub = [im - dark for im in imstack]
