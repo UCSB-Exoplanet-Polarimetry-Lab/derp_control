@@ -12,7 +12,7 @@ import ipdb
 from derpy.motion import BaseZaberStage, ZaberConnection
 from derpy.camera import CRED2, display_all_temps, ZWOASI
 from derpy.derpy_conf import ZABER_PORT
-from derpy.photodiode_class import OPM
+from derpy.photodiode_class import OPM, VISA
 
 
 """
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     # Init camera connection with default settings
     cam = ZWOASI(tint=TINT, fps=FPS)
-    opm = OPM() 
+    opm = OPM(VISA) 
 
     # Take a dark
     _ = input("Turn off laser and press ENTER to take a dark image: ")
