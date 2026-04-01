@@ -22,20 +22,21 @@ EXPERIMENT PARAMETERS DEFINED BY USER
 
 ANGULAR_STEP = 7.2  # degrees
 ANGULAR_RATIO = 2.5  
-N_CAL_MEASUREMENTS = 50
-N_MEASUREMENTS = 50
-DATA_PATH = Path.home() / "Data/Derpy/03-05-2026/Microscope_Objective"
-TINT = 330 # milliseconds
+N_CAL_MEASUREMENTS = 120
+N_MEASUREMENTS = 120
+DATA_PATH = Path.home() / "Data/Derpy/04-01-2026/April_Fools_No_Noise"
+TINT = 100 # milliseconds
 FPS = 10
-GAIN = 179
+GAIN = 120
 SET_TEMPERATURE = None  # degrees Celsius
-WAVELENGTHS = [635]  # nm
+WAVELENGTHS = [650]  # nm
 WVL_POWERS = [1.41]
 N_MEDIANS_DARK = 10
 N_MEDIANS = 10
+N_COADDS = 10
 DARK_SUBTRACT = True # Subtract dark frames from images
 SAVE_PSG_IMGS = False # Save PSG images
-EXPERIMENT_NAME = "romantic_microscope_smooch2"
+EXPERIMENT_NAME = "noise_figure_outer"
 """
 ---------------------------------
 """
@@ -53,7 +54,16 @@ if __name__ == "__main__":
 
     # Take a dark
     _ = input("Turn off laser and press ENTER to take a dark image: ")
-    dark, dark_power = cam.take_median_image(N_MEDIANS_DARK)
+    dark = []
+    dark_power = [] 
+
+    for _ in range(N_MEDIANS_DARK):
+        _dark, _dark_power = cam.take_many_images(N_COADDS)
+        dark.append(np.sum(_dark, axis=0)) 
+        dark_power.append(np.sum(_dark_power, axis=0)) 
+
+    dark = np.nanmedian(dark, axis=0)
+    dark_power = np.nanmedian(dark_power, axis=0)
 
     # Initialize the Zaber stage
     from derpy import (
@@ -109,7 +119,11 @@ if __name__ == "__main__":
 
             if SAVE_PSG_IMGS:
 
-                imstack, _ = cam.take_many_images(N_MEDIANS, OPM=opm)
+                imstack = []
+
+                for _ in range(N_MEDIANS):
+                    _imstack, _ = cam.take_many_images(N_COADDS, OPM=opm)
+                    imstack.append(np.sum(_imstack, axis=0))
 
                 if DARK_SUBTRACT:
                     imstack_darksub = [im - dark for im in imstack]
@@ -128,7 +142,13 @@ if __name__ == "__main__":
             if i != 0:
                 psa.step(ANGULAR_STEP * ANGULAR_RATIO)
 
-            imstack, psa_power = cam.take_many_images(N_MEDIANS, OPM=opm)
+            imstack = []
+            psa_power = []
+
+            for _ in range(N_MEDIANS):
+                _imstack, _psa_power = cam.take_many_images(N_COADDS, OPM=opm)
+                imstack.append(np.sum(_imstack, axis=0))
+                psa_power.append(np.sum(_psa_power, axis=0))
 
             if DARK_SUBTRACT:
                 imstack_darksub = [im - dark for im in imstack]
@@ -154,6 +174,7 @@ if __name__ == "__main__":
         primary_hdu.header['FPS'] = FPS
         primary_hdu.header['TINT'] = TINT
         primary_hdu.header['N_PER_MEDIAN'] = N_MEDIANS
+        primary_hdu.header['N_PER_COADD'] = N_COADD
         primary_hdu.header['DARK_SUBTRACT'] = DARK_SUBTRACT
         primary_hdu.header['SAVE_PSG_IMGS'] = SAVE_PSG_IMGS
         primary_hdu.header['WAVELENGTHS'] = str(WAVELENGTHS)
