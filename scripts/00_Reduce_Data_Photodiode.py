@@ -51,6 +51,12 @@ CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
 DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
 / "measurement_data_2026-01-13_15-18-36.fits"
 
+CAL_DIR = Path.home() / "Data/Derpy/04-01-2026/April_Fools_No_Noise" \
+/ "calibration_data_2026-04-01_13-48-04.fits"
+
+DATA_DIR = Path.home() / "Data/Derpy/04-01-2026/April_Fools_No_Noise" \
+/ "measurement_data_2026-04-01_13-06-25.fits"
+
 # CAL_DIR = Path.home() / "Data/dans_data/" \
 # / "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
 #

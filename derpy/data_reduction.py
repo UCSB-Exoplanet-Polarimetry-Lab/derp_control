@@ -813,20 +813,6 @@ def reduce_data(data, centering='circle', mask=None, bin=None, reference_frame=0
             if mask is not None:
                 img = img * mask
 
-            # In the non-photodiode case this has a 1/2, but because we are normalizing to
-            # A single frame (instead of a sum) this is /4
-            # print(images.shape)
-            # print(max_idx)
-            # plt.figure()
-            # plt.subplot(121)
-            # plt.imshow(img)
-            # plt.colorbar()
-            # plt.subplot(122)
-            # plt.title("The Brightest Frame")
-            # plt.imshow(images[max_idx] * mask)
-            # plt.colorbar()
-            # plt.show()
-            # np.mean(images[max_idx][mask==1]) /
             set = img * p_ref / p_ref_0 #/  4
             images[i] = set
 
