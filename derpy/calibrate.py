@@ -56,7 +56,7 @@ def sum_of_2d_modes_wrapper(modes, weights):
             return jax_sum_of_2d_modes(modes, weights)
 
 
-def create_modal_basis(num_modes, num_pix, angle_offset=0):
+def create_modal_basis(num_modes, num_pix, radial_offset=0, angle_offset=0):
     """Generates a zernike polynomial basis
 
     Parameters
@@ -67,7 +67,9 @@ def create_modal_basis(num_modes, num_pix, angle_offset=0):
         to noll index = num_modes + 1
     num_pix : int
         number of samples to use across the array
-    angle_offset : float
+    radial_offset : float or ndarray
+        radial offset for the angular coordinate of the basis
+    angle_offset : float or ndarray
         angle offset for the angular coordinate of the basis
 
     Returns
@@ -77,10 +79,21 @@ def create_modal_basis(num_modes, num_pix, angle_offset=0):
         an array of `num_pix` samples
 
     """
+    # logic to parse which is bigger and broadcast
+    if np.isscalar(radial_offset) and np.isscalar(angle_offset):
+        pass
+    elif np.isscalar(radial_offset) and not np.isscalar(angle_offset):
+        radial_offset = np.full_like(angle_offset, radial_offset)
+    elif not np.isscalar(radial_offset) and np.isscalar(angle_offset):
+        angle_offset = np.full_like(radial_offset, angle_offset)
+    else:
+        assert radial_offset.shape == angle_offset.shape, "If both radial and angle offsets are arrays, they must have the same shape"
+
     # assume a unit disk
     x, y = make_xy_grid(num_pix, diameter=2)
     r, t = cart_to_polar(x, y)
     t = t + angle_offset
+    r = r + radial_offset
 
     # build the polynomials
     # NOTE: num_modes is total number of modes, since we start the Zernike
@@ -123,13 +136,17 @@ def psg_psa_states_broadcast(x0, basis_psg, basis_psa, psg_angles, rotation_rati
     psg_pol_angle = x0[1]
     psa_pol_angle = x0[2] + psa_offset
 
+    npix = basis_psg[0].shape[0]
     nmodes = basis_psg.shape[1]
 
+    # Generate a new basis for each of the angular offsets
     offset = 3
     psg_wvp_coeffs = x0[offset + 0 * nmodes : offset + 1 * nmodes]
     psa_wvp_coeffs = x0[offset + 1 * nmodes : offset + 2 * nmodes]
     psg_ang_coeffs = x0[offset + 2 * nmodes : offset + 3 * nmodes]
     psa_ang_coeffs = x0[offset + 3 * nmodes : offset + 4 * nmodes]
+
+    # Re-generate the basis at each iteration
 
     # Adding support for PSA diattenuation which DO NOT ROTATE
     # psa_dia_coeffs = x0[offset + 4 * nmodes : offset + 5 * nmodes]

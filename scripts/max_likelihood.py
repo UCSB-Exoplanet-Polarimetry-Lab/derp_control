@@ -46,86 +46,48 @@ USER INPUTS
 CHANNEL = "Left" # Right, Both
 
 NMODES = 1
-TOL = 1e-20 # adjusts both function and gradient tolerance, exits when EITHER are below this value
+TOL = 1e-40 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
-# Just measuring air
-# CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-# / "calibration_data_2026-01-13_15-15-09.fits"
+# Let's try and load up Dan's data
+CAL_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
 
-# DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-# / "measurement_data_2026-01-13_15-18-36.fits"
+DATA_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
 
-CAL_DIR = Path.home() / "Data/Derpy/03-05-2026/Microscope_Objective" \
-/ "calibration_data_2026-03-05_12-35-23.fits"
+# Our Recent VRRP measurements
+# CAL_DIR = Path.home() / "Data/Derpy/04-07-2026/allmyhomieshatenoise" \
+# / "calibration_data_2026-04-07_14-23-36.fits"
 
-# DATA_DIR = Path.home() / "Data/Derpy/03-05-2026/Microscope_Objective" \
-# / "measurement_data_2026-03-05_12-22-42.fits"
+# DATA_DIR = Path.home() / "Data/Derpy/04-07-2026/allmyhomieshatenoise" \
+# / "measurement_data_2026-04-07_13-51-51.fits"
 
-# CAL_DIR = Path.home() / "Data/Derpy/03-05-2026/Microscope_Objective_spideroverlap" \
-# / "calibration_data_2026-03-05_13-14-05.fits"
-
-DATA_DIR = Path.home() / "Data/Derpy/03-05-2026/Microscope_Objective_spideroverlap" \
-/ "measurement_data_2026-03-05_13-04-48.fits"
-
-CAL_DIR = Path.home() / "Data/Derpy/04-01-2026/April_Fools_No_Noise" \
-/ "calibration_data_2026-04-01_13-48-04.fits"
-
-DATA_DIR = Path.home() / "Data/Derpy/04-01-2026/April_Fools_No_Noise" \
-/ "measurement_data_2026-04-01_13-06-25.fits"
-
-# 1429, mask_frames=[0]
-# CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-# / "calibration_data_2026-01-13_10-54-38.fits"
-#
-# DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-# / "measurement_data_2026-01-13_11-06-20.fits"
-
-# hdu_cal_ucsb = fits.open(CAL_DIR)
-# hdu_data_ucsb = fits.open(DATA_DIR)
-
-# CAL_DIR = Path.home() / "Data/dans_data/" \
-# / "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
-
-# DATA_DIR = Path.home() / "Data/dans_data/" \
-# / "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
-
-# hdu_cal_jpl = fits.open(CAL_DIR)
-# hdu_data_jpl = fits.open(DATA_DIR)
-
-# 1149
-# CAL_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
-# / "calibration_data_2026-01-15_13-32-33.fits"
-#
-# # 7154
-# DATA_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
-# / "measurement_data_2026-01-15_13-36-36.fits"
-
-HANDEDNESS = -1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
+HANDEDNESS = 1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
 
 # Get the experiment dictionaries
 out = derp.load_fits_data(measurement_pth=CAL_DIR,
-                                  use_encoder=True,
+                                  use_encoder=False,
                                   centering_ref_img=0,
                                   use_photodiode=True,
-                                  label="Noise_0401",
+                                  label="Dan_1103",
                                   mask_frames=None)
 
 out_exp = derp.load_fits_data(measurement_pth=DATA_DIR,
-                                  use_encoder=True,
+                                  use_encoder=False,
                                   centering_ref_img=0,
                                   use_photodiode=True,
-                                  label="Noise_0401")
+                                  label="Dan_1103")
 
 
 # Reduce the data
-binsize = 6
+binsize = 12
 
 # make a mask
 before_bin_mask = np.zeros_like(out["images"][0])
 x = np.linspace(-1, 1, before_bin_mask.shape[0])
 x, y = np.meshgrid(x, x)
 r = np.hypot(x, y)
-before_bin_mask[r < .9] = 1
+before_bin_mask[r < 1.] = 1
 
 reduced_cal, circle_params = derp.reduce_data(out,
                                               centering=None,
@@ -168,7 +130,7 @@ def clean_frames(frames):
     return frames
 
 # What if we normalize by the first frame to account for illumination
-true_frames = true_frames / true_frames[0]
+# true_frames = true_frames / true_frames[0]
 true_frames = clean_frames(true_frames)
 
 print(f"cal img shape = {reduced_cal.shape}")
@@ -199,14 +161,15 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.zeros(3 + 4*NMODES)
+offset = 3 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
+x0 = np.zeros(offset + 4*NMODES)
 
 # The input power term
 x0[0] = 1
 
 # ensures the piston term is quarter-wave to start / also need the second
-x0[3] = np.pi / 2
-x0[3 + 1*NMODES] = np.pi / 2
+x0[offset] = np.pi / 2
+x0[offset + 1*NMODES] = np.pi / 2
 
 # x0[2 + 4*NMODES] = 0 # PSA is a polarizer
 # x0[2 + 4*NMODES+1:] = 0
