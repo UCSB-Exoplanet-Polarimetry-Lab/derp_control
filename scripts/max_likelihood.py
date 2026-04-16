@@ -3,6 +3,7 @@ This is a script that runs the pre-generation of rotated modal bases before cali
 Intended for debugging purposes showing the difference between the JPL data and the UCSB data
 """
 
+from jax.numpy import mean
 from numpy import exp
 from traitlets.config import t
 import derpy as derp
@@ -47,56 +48,46 @@ CHANNEL = "Left" # Right, Both
 NMODES = 1
 TOL = 1e-40 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
-# Just measuring air
-CAL_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-/ "calibration_data_2026-01-13_15-15-09.fits"
+# Let's try and load up Dan's data
+CAL_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
 
-DATA_DIR = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC" \
-/ "measurement_data_2026-01-13_15-18-36.fits"
+DATA_DIR = Path.home() / "Data/dans_data" \
+/ "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
 
-hdu_cal_ucsb = fits.open(CAL_DIR)
-hdu_data_ucsb = fits.open(DATA_DIR)
+# Our Recent VRRP measurements
+# CAL_DIR = Path.home() / "Data/Derpy/04-07-2026/allmyhomieshatenoise" \
+# / "calibration_data_2026-04-07_14-23-36.fits"
 
-# CAL_DIR = Path.home() / "Data/dans_data/" \
-# / "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
+# DATA_DIR = Path.home() / "Data/Derpy/04-07-2026/allmyhomieshatenoise" \
+# / "measurement_data_2026-04-07_13-51-51.fits"
 
-# DATA_DIR = Path.home() / "Data/dans_data/" \
-# / "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
-
-hdu_cal_jpl = fits.open(CAL_DIR)
-hdu_data_jpl = fits.open(DATA_DIR)
-
-# CAL_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
-# / "calibration_data_2026-01-15_13-32-33.fits"
-#
-# DATA_DIR = Path.home() / "Data/Derpy/01-15-2026/romantic_microscope_smooch" \
-# / "measurement_data_2026-01-15_13-36-36.fits"
-#
-
-HANDEDNESS = -1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
-
-hdu_cal = fits.open(CAL_DIR)
-hdu_data = fits.open(DATA_DIR)
+HANDEDNESS = 1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
 
 # Get the experiment dictionaries
-loaded_data = derp.load_fits_data(measurement_pth=DATA_DIR,
-                                  calibration_pth=CAL_DIR,
-                                  use_encoder=True,
-                                  centering_ref_img=10,
-                                  use_photodiode=True)
+out = derp.load_fits_data(measurement_pth=CAL_DIR,
+                                  use_encoder=False,
+                                  centering_ref_img=0,
+                                  use_photodiode=True,
+                                  label="Dan_1103",
+                                  mask_frames=None)
+
+out_exp = derp.load_fits_data(measurement_pth=DATA_DIR,
+                                  use_encoder=False,
+                                  centering_ref_img=0,
+                                  use_photodiode=True,
+                                  label="Dan_1103")
+
 
 # Reduce the data
-binsize = 20
-out = loaded_data["Calibration"]
-out_exp = loaded_data["Measurement"]
+binsize = 12
 
 # make a mask
-print(out["images"].shape)
 before_bin_mask = np.zeros_like(out["images"][0])
 x = np.linspace(-1, 1, before_bin_mask.shape[0])
 x, y = np.meshgrid(x, x)
 r = np.hypot(x, y)
-before_bin_mask[r < .9] = 1
+before_bin_mask[r < 1.] = 1
 
 reduced_cal, circle_params = derp.reduce_data(out,
                                               centering=None,
@@ -106,9 +97,31 @@ reduced_cal, circle_params = derp.reduce_data(out,
 reduced_exp, circle_params_exp = derp.reduce_data(out_exp,
                                                   centering=None,
                                                   bin=binsize,
-                                                  mask=before_bin_mask)
+                                                  mask=None)
+
+# Create a mask from the circle parameters
 true_frames = reduced_cal
 exp_frames = reduced_exp
+
+mask = np.ones_like(true_frames[0])
+y0, x0 = circle_params['center']
+radius = circle_params['radius'] / binsize # divide by bin amount
+x = np.linspace(-radius, radius, mask.shape[0])
+x, y = np.meshgrid(x, x)
+r = np.hypot(x, y)
+mask[r > radius] = 0
+
+mask_exp = np.ones_like(exp_frames[0])
+inner_mask_exp = np.ones_like(exp_frames[0])
+y0, x0 = circle_params_exp['center']
+radius = circle_params_exp['radius'] / binsize # divide by bin amount
+x = np.linspace(-radius, radius, mask_exp.shape[0])
+x, y = np.meshgrid(x, x)
+r = np.hypot(x, y)
+mask_exp[r > radius] = 0
+inner_mask_exp[r < 0.8*radius] = 0
+annular_mask = mask_exp * inner_mask_exp
+
 
 def clean_frames(frames):
     # Just turn them off, more likely to be at beam edges
@@ -117,57 +130,55 @@ def clean_frames(frames):
     return frames
 
 # What if we normalize by the first frame to account for illumination
-true_frames = true_frames / true_frames[0]
+# true_frames = true_frames / true_frames[0]
 true_frames = clean_frames(true_frames)
+
+print(f"cal img shape = {reduced_cal.shape}")
+kounter = 0
+plt.figure()
+for i in range(6):
+    for j in range(4):
+        plt.subplot(4, 6, kounter + 1)
+        plt.imshow(true_frames[kounter])
+        plt.colorbar()
+        kounter += 1
 
 # Generate polynomials
 NPIX = true_frames.shape[-1]
+NPIX_EXP = exp_frames.shape[-1]
 
-# Create a mask from the circle parameters
-mask = np.ones_like(true_frames[0])
-mask[true_frames[0] < 0.9] = 0
-# mask = np.zeros((NPIX, NPIX), dtype=int)
-y0, x0 = circle_params['center']
-radius = circle_params['radius'] / binsize # divide by bin amount
-
-# x = np.arange(-NPIX//2, NPIX//2, dtype=np.float64)
-# y, x = np.meshgrid(x, x)
-# r = np.sqrt((y)**2 + (x)**2)
-#
-# # Using 90% of the radius to account for misregistration at the edges
-# mask[r <= radius * .6] = 1
 
 # Apply the mask to the true frames
 print(f"true frames shape = {true_frames.shape}")
 true_frames_masked = [i * mask for i in true_frames]
 true_frames = np.asarray(true_frames_masked)
 true_frames = np.moveaxis(true_frames, 0, -1)
-# true_frames = true_frames / np.max(true_frames)
 
-exp_frames_masked = [i * mask for i in exp_frames]
+# Don't mask the experimental data
+exp_frames_masked = [i * mask_exp for i in exp_frames]
 exp_frames = np.asarray(exp_frames_masked)
 exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-x0 = np.random.random(3 + 4*NMODES)
-x0 = np.zeros(3 + 4*NMODES)
+offset = 3 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
+x0 = np.zeros(offset + 4*NMODES)
 
 # The input power term
 x0[0] = 1
 
 # ensures the piston term is quarter-wave to start / also need the second
-x0[3] = np.pi / 2
-x0[3 + 1*NMODES] = np.pi / 2
+x0[offset] = np.pi / 2
+x0[offset + 1*NMODES] = np.pi / 2
 
 # x0[2 + 4*NMODES] = 0 # PSA is a polarizer
 # x0[2 + 4*NMODES+1:] = 0
-psg_angles = np.radians(out['psg_angles'].data.astype(np.float64))
-psa_angles = np.radians(out['psa_angles'].data.astype(np.float64))
+psg_angles = np.radians(out['psg_angles'].astype(np.float64))
+psa_angles = np.radians(out['psa_angles'].astype(np.float64))
 
 # experiment PSG angles
-psg_angles_exp = np.radians(out_exp['psg_angles'].data.astype(np.float64))
-psa_angles_exp = np.radians(out_exp['psa_angles'].data.astype(np.float64))
+psg_angles_exp = np.radians(out_exp['psg_angles'].astype(np.float64))
+psa_angles_exp = np.radians(out_exp['psa_angles'].astype(np.float64))
 
 psg_angles = psg_angles * HANDEDNESS
 psa_angles = psa_angles * HANDEDNESS
@@ -207,13 +218,13 @@ for offset_psg, offset_psa in zip(psg_angles, psa_angles):
 for offset_psg_exp, offset_psa_exp in zip(psg_angles_exp, psa_angles_exp):
 
     # offset is in radians to be compatible with prysm angles
-    basis = create_modal_basis(NMODES, NPIX, angle_offset=offset_psg_exp)
-    basis_masked = [i * mask for i in basis]
+    basis = create_modal_basis(NMODES, NPIX_EXP, angle_offset=offset_psg_exp)
+    basis_masked = [i * 1 for i in basis]
     basis_masked = np.asarray(basis_masked)
     basis_withrotations_psg_exp.append(basis_masked)
 
-    basis = create_modal_basis(NMODES, NPIX, angle_offset=offset_psa_exp)
-    basis_masked = [i * mask for i in basis]
+    basis = create_modal_basis(NMODES, NPIX_EXP, angle_offset=offset_psa_exp)
+    basis_masked = [i * 1 for i in basis]
     basis_masked = np.asarray(basis_masked)
     basis_withrotations_psa_exp.append(basis_masked)
 
@@ -238,26 +249,9 @@ del basis_withrotations_psg_exp, basis_withrotations_psa_exp
 
 set_backend_to_jax()
 
-def GIE(I, D):
-    t1 = np.sum(I * D) ** 2
-    t2 = np.sum(D ** 2)
-    t3 = np.sum(I ** 2)
-    return 1 - t1 / (t2 * t3)
-
 def MSE(I, D):
     squared_error = (I - D) ** 2
-    return np.mean(squared_error)
-
-
-# Try plot the first few frames of true_frames
-plt.figure(figsize=[12, 3])
-for i in range(4):
-    plt.subplot(1, 4, i+1)
-    plt.imshow(true_frames[..., i], cmap="gray")
-    plt.title(f"True Frame {i}")
-    plt.colorbar()
-
-
+    return np.nanmean(squared_error)
 
 plt.figure()
 plt.plot(psg_angles, label="PSG")
@@ -375,6 +369,13 @@ plt.legend()
 del psg_retarder_estimate, psa_retarder_estimate
 
 # create simulated power
+start_frames = forward_model(x0, basis_masked_psg, basis_masked_psa,
+                        psg_angles,
+                        rotation_ratio=2.5,
+                        dual_I=False,
+                        psa_angles=psa_angles)
+
+# create simulated power
 sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
                             psg_angles,
                             rotation_ratio=2.5,
@@ -386,20 +387,30 @@ sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
 # forgive me. To help explain, I wanted to do list comprehension over the last
 # axis of the `sim_frames` and `true_frames` arrays. This was the most concise
 # way I could think of doing so
+mean_start = [np.nanmean(i[mask==1]) for i in np.moveaxis(start_frames, -1, 0)]
 mean_simulated = [np.nanmean(i[mask==1]) for i in np.moveaxis(sim_frames, -1, 0)]
-mean_observed = [np.nanmean(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
+mean_observed = [(i[mask==1]) for i in np.moveaxis(true_frames, -1, 0)]
 mean_simulated = np.asarray(mean_simulated)
 mean_observed = np.asarray(mean_observed)
+print(f"observed data shape = {mean_observed.shape}")
 psg_angles_plot = psg_angles
 
 plt.figure()
-plt.title("first-frame normalized power observed")
+plt.title("Power observed")
+plt.plot(np.degrees(psg_angles_plot), mean_simulated, label="Starting guess", marker="*")
 plt.plot(np.degrees(psg_angles_plot), mean_simulated, label="Fit Power", marker="x")
-plt.plot(np.degrees(psg_angles_plot), mean_observed, label="Measured Power",
-                                                marker="o", linestyle=None)
+plt.plot(np.degrees(psg_angles_plot), mean_observed,
+                                      alpha=0.2,
+                                      marker="o",
+                                      linestyle=None,
+                                      color="b")
 plt.ylabel("power")
 plt.xlabel("PSG Angle, deg")
 plt.legend()
+
+print(f"Starting Guess = {np.asarray(x0)}")
+print(f"Optimized Parameters = {np.asarray(results.x)}")
+
 
 # Perform polarimetric data reduction before and after calibration
 spatial_cal_results = results.x.copy()
@@ -408,10 +419,11 @@ Winv = make_data_reduction_matrix(results.x,
                                 basis_masked_psg,
                                 basis_masked_psa,
                                 psg_angles=psg_angles,
-                                psa_angles=psa_angles)
+                                psa_angles=psa_angles,
+                                dual_I=False,
+                                rotation_ratio=2.5)
 
 # Determine the Mueller matrix given the model
-ipdb.set_trace()
 true_array = np.asarray(true_frames)
 true_array = true_array[..., np.newaxis]
 M_meas = Winv @ true_array
@@ -444,7 +456,13 @@ med_M = np.nanmedian(M_meas[mask.astype(int)], axis=0)
 var = (med_M - I)**2
 rms = np.sqrt(np.sum(var))
 
-derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix, "+f"{np.nanmean(med_M):.5f}" + r"$\pm$ " + f"{rms:.5f}", vmin=-1, vmax=1, cmap="RdBu_r")
+annular_mask[annular_mask == 0] = np.nan
+
+mean_in_annulus = np.nanmean(M_meas * annular_mask[..., None, None], axis=(0, 1), keepdims=True)
+print(mean_in_annulus)
+# M_meas = M_meas - mean_in_annulus
+
+derp.plot_4x4_grid(M_meas, title="Measured Mueller Matrix, "+f"{np.nanmean(med_M):.5f}" + r"$\pm$ " + f"{rms:.5f}", vmin=-1., vmax=1., cmap="RdBu_r")
 
 
 # Plot the retarder
@@ -527,7 +545,7 @@ from matplotlib.patches import Ellipse
 # Example data - replace with your actual arrays
 
 # Create background image (e.g., intensity)
-background = np.degrees(retardance_pupil)
+background = retardance_pupil / (2 * np.pi)
 size = background.shape[0]
 
 # Create figure
@@ -535,7 +553,7 @@ fig, ax = plt.subplots(figsize=(10, 10))
 
 # Display background
 im = ax.imshow(background, cmap='Spectral', origin='lower', extent=[0, size, 0, size])
-plt.colorbar(im, ax=ax, label='Retardance [rad]')
+plt.colorbar(im, ax=ax, label='Retardance [waves, 650nm]')
 
 # Downsample for clearer visualization (plot every nth ellipse)
 step = 5  # Adjust this to control density of ellipses
@@ -554,7 +572,7 @@ for i in range(0, size, step):
             xy=(j + 0.5, i + 0.5),  # Center position
             width=2*a,              # Full width
             height=2*b,             # Full height
-            angle=angle,            # Rotation angle
+            angle=np.degrees(angle),            # Rotation angle
             facecolor='none',
             edgecolor='red' if h > 0 else 'blue',  # Color by handedness
             linewidth=1.5,
