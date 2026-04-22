@@ -130,7 +130,7 @@ def clean_frames(frames):
     return frames
 
 # What if we normalize by the first frame to account for illumination
-# true_frames = true_frames / true_frames[0]
+true_frames = true_frames / true_frames[0]
 true_frames = clean_frames(true_frames)
 
 print(f"cal img shape = {reduced_cal.shape}")
@@ -276,11 +276,35 @@ def loss(x):
 
     return MSE(true_array, sim_array)
 
+from jax.scipy.stats import poisson, norm
+
+def log_likelihood(x):
+
+    true_array = np.asarray(true_frames)
+
+    # Includes simulation of the DC power term
+    sim_array = forward_model(x,
+                            basis_masked_psg,
+                            basis_masked_psa,
+                            psg_angles,
+                            rotation_ratio=2.5,
+                            dual_I=False,
+                            psa_angles=psa_angles)
+
+    sim_array = sim_array * mask[..., None]
+
+    #loglike = poisson.logpmf(k=true_array, mu=sim_array)
+    loglike = norm.logpdf(x=true_array[mask==1],
+                          loc=sim_array[mask==1],
+                          scale=(sim_array[mask==1]))
+    return -1 * np.sum(loglike)
+
 
 from time import perf_counter
 _ = loss(x0)
 t1 = perf_counter()
-loss_fg = value_and_grad(loss)
+# loss_fg = value_and_grad(loss)
+loss_fg = value_and_grad(log_likelihood)
 f, g = loss_fg(x0)
 
 print(f"Time taken to compile and run the fg(x): {perf_counter() - t1:.2f} seconds")
@@ -304,8 +328,14 @@ results = minimize(loss_fg, x0=x0, method="L-BFGS-B", jac=True,
                    options={"maxiter":100_000, "ftol":TOL, "gtol":TOL,
                             "maxfun":100_000})
 
+
 if pbar is not None:
     pbar.close()
+
+f, g = loss_fg(results.x)
+print("Final Gradient Value")
+print(20*"-")
+print(g)
 
 plt.figure()
 plt.plot(funcvals, marker="o")
@@ -381,6 +411,73 @@ sim_frames = forward_model(results.x, basis_masked_psg, basis_masked_psa,
                             rotation_ratio=2.5,
                             dual_I=False,
                             psa_angles=psa_angles)
+
+from jax import hessian
+from matplotlib.colors import LogNorm
+from jax import jacrev
+jac_loglike = jacrev(log_likelihood)
+fisher_information = hessian(log_likelihood)
+FIM = fisher_information(results.x)
+print(f"Gradient")
+print(jac_loglike(results.x))
+print(f"Hessian")
+print(FIM)
+
+COV = np.abs(np.linalg.inv(FIM))
+
+Parameters = [
+    r"$I_0$",
+    r"$\theta_{pol, g}$",
+    r"$\theta_{pol, a}$",
+    r"$\delta_{ret, g}$",
+    r"$\delta_{ret, a}$",
+    r"$\theta_{ret, g}$",
+    r"$\theta_{ret, a}$",
+]
+
+from matplotlib.patches import Ellipse
+import itertools
+
+def cov_ellipse(ax, mean, cov2d, n_sigma=2, **kwargs):
+    """Draw a covariance ellipse for a 2D subspace."""
+    vals, vecs = np.linalg.eigh(cov2d)
+    angle = np.degrees(np.arctan2(*vecs[:, -1][::-1]))
+    for ns in range(1, n_sigma + 1):
+        w, h = 2 * ns * np.sqrt(vals)
+        ell = Ellipse(xy=mean, width=w, height=h, angle=angle, **kwargs)
+        ax.add_patch(ell)
+
+params = Parameters 
+n = len(params)
+mean = results.x 
+cov = COV
+
+from chainconsumer import ChainConsumer, Chain
+
+param_names = Parameters 
+X = np.zeros(len(param_names))
+chain = Chain.from_covariance(
+    results.x,
+    cov,
+    columns=params,
+    name="MSE Estimation"
+)
+c = ChainConsumer()
+c.add_chain(chain)
+#c.configure(serif=True, shade=True, bar_shade=True, shade_alpha=0.2, spacing=1., max_ticks=3)
+
+# fig = c.plotter.plot_summary() # currently bugged for \phi - issue raised
+fig = c.plotter.plot()
+
+
+plt.figure()
+plt.title("Covariance Matrix, "+r"$\mathcal{L}=$"+f"{log_likelihood(results.x):.2f}")
+plt.imshow(COV, cmap="coolwarm", norm=LogNorm(), origin="lower")
+plt.colorbar()
+plt.xticks(np.arange(len(Parameters)), Parameters)
+plt.yticks(np.arange(len(Parameters)), Parameters)
+plt.show()
+
 
 # perform a comparison via mean power
 # NOTE I've commited a heinous crime with the following lines of code, please
