@@ -146,7 +146,19 @@ def psg_psa_states_broadcast(x0, basis_psg, basis_psa, psg_angles, rotation_rati
     psg_ang_coeffs = x0[offset + 2 * nmodes : offset + 3 * nmodes]
     psa_ang_coeffs = x0[offset + 3 * nmodes : offset + 4 * nmodes]
 
-    # Re-generate the basis at each iteration
+    # Re-generate the basis at each iteration - pre-allocate large arrays to store the basis
+    basis_withrotations_psa = [ Construct Calibration Basis
+    for offset_psg, offset_psa in zip(psg_angles, psa_angles):
+
+        # offset is in radians to be compatible with prysm angles
+        basis = create_modal_basis(nmodes, npix, radial_offset=drg, angle_offset=offset_psg + dtg)
+        basis_masked = np.asarray(basis)
+        basis_withrotations_psg.append(basis_masked)
+
+        basis = create_modal_basis(nmodes, npix, radial_offset=dra, angle_offset=offset_psa + dta)
+        basis_masked = np.asarray(basis)
+        basis_withrotations_psa.append(basis_masked)
+
 
     # Adding support for PSA diattenuation which DO NOT ROTATE
     # psa_dia_coeffs = x0[offset + 4 * nmodes : offset + 5 * nmodes]

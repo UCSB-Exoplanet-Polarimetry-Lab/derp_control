@@ -161,7 +161,7 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-offset = 3 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
+offset = 6 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
 x0 = np.zeros(offset + 4*NMODES)
 
 # The input power term
@@ -560,15 +560,6 @@ step = 5  # Adjust this to control density of ellipses
 scale = 1  # Scale factor for ellipse size
 
 for i in range(0, size, step):
-    for j in range(0, size, step):
-        # Get ellipse parameters at this position
-        a = A[i, j] * scale
-        b = B[i, j] * scale
-        angle = theta[i, j]
-        h = handedness[i, j]
-
-        # Create ellipse
-        ellipse = Ellipse(
             xy=(j + 0.5, i + 0.5),  # Center position
             width=2*a,              # Full width
             height=2*b,             # Full height

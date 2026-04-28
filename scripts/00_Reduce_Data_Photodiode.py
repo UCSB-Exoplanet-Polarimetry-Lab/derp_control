@@ -46,7 +46,7 @@ USER INPUTS
 CHANNEL = "Left" # Right, Both
 
 NMODES = 1
-TOL = 1e-40 # adjusts both function and gradient tolerance, exits when EITHER are below this value
+TOL = 1e-10 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Let's try and load up Dan's data
 CAL_DIR = Path.home() / "Data/dans_data" \
@@ -161,7 +161,7 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-offset = 7 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
+offset = 6 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
 x0 = np.zeros(offset + 4*NMODES)
 
 # The input power term
@@ -197,8 +197,6 @@ from derpy.calibrate import forward_model
 
 basis_withrotations_psg = []
 basis_withrotations_psa = []
-basis_withrotations_psg_exp = []
-basis_withrotations_psa_exp = []
 
 # Construct Calibration Basis
 for offset_psg, offset_psa in zip(psg_angles, psa_angles):
@@ -214,25 +212,11 @@ for offset_psg, offset_psa in zip(psg_angles, psa_angles):
     basis_masked = np.asarray(basis_masked)
     basis_withrotations_psa.append(basis_masked)
 
-# Construct Experiment Basis
-for offset_psg_exp, offset_psa_exp in zip(psg_angles_exp, psa_angles_exp):
-
-    # offset is in radians to be compatible with prysm angles
-    basis = create_modal_basis(NMODES, NPIX_EXP, angle_offset=offset_psg_exp)
-    basis_masked = [i * 1 for i in basis]
-    basis_masked = np.asarray(basis_masked)
-    basis_withrotations_psg_exp.append(basis_masked)
-
-    basis = create_modal_basis(NMODES, NPIX_EXP, angle_offset=offset_psa_exp)
-    basis_masked = [i * 1 for i in basis]
-    basis_masked = np.asarray(basis_masked)
-    basis_withrotations_psa_exp.append(basis_masked)
-
 # override the prior basis
 basis_masked_psg = np.asarray(basis_withrotations_psg)
 basis_masked_psa = np.asarray(basis_withrotations_psa)
-basis_masked_psg_exp = np.asarray(basis_withrotations_psg_exp)
-basis_masked_psa_exp = np.asarray(basis_withrotations_psa_exp)
+basis_masked_psg = np.swapaxes(basis_masked_psg, 0, 1)
+basis_masked_psa = np.swapaxes(basis_masked_psa, 0, 1)
 
 mode_to_show = NMODES-1
 angle_to_show = 4
@@ -245,7 +229,6 @@ plt.colorbar()
 
 # Clear memory
 del basis_withrotations_psg, basis_withrotations_psa
-del basis_withrotations_psg_exp, basis_withrotations_psa_exp
 
 set_backend_to_jax()
 
@@ -278,12 +261,21 @@ def loss(x):
 
 
 from time import perf_counter
+
+t1 = perf_counter()
 _ = loss(x0)
+print(f"Time taken to compile and run the f(x): {perf_counter() - t1:.2f} seconds")
+
 t1 = perf_counter()
 loss_fg = value_and_grad(loss)
 f, g = loss_fg(x0)
 
 print(f"Time taken to compile and run the fg(x): {perf_counter() - t1:.2f} seconds")
+
+t1 = perf_counter()
+grad = jacrev(loss)
+g = grad(x0)
+print(f"Time taken to compile and run the g(x): {perf_counter() - t1:.2f} seconds")
 print(f"function val = {f}")
 print(f"gradient val = {g}")
 
@@ -315,8 +307,54 @@ plt.ylabel("Mean Squared Error")
 plt.xlabel("Function Evaluations")
 print(results.x)
 
+# Extract the offsets and re-generate the basis
+drg, dtg = results.x[2], results.x[3]
+dra, dta = results.x[4], results.x[5]
+
+basis_withrotations_psg = []
+basis_withrotations_psa = []
+basis_withrotations_psg_exp = []
+basis_withrotations_psa_exp = []
+
+# Construct Calibration Basis
+for offset_psg, offset_psa in zip(psg_angles, psa_angles):
+
+    # offset is in radians to be compatible with prysm angles
+    basis = create_modal_basis(NMODES, NPIX, radial_offset=drg, angle_offset=dtg + offset_psg)
+    basis_masked = [i * mask for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psg.append(basis_masked)
+
+    basis = create_modal_basis(NMODES, NPIX, radial_offset=dra, angle_offset=dta + offset_psa)
+    basis_masked = [i * mask for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psa.append(basis_masked)
+
+# Construct Experiment Basis
+for offset_psg_exp, offset_psa_exp in zip(psg_angles_exp, psa_angles_exp):
+
+    # offset is in radians to be compatible with prysm angles
+    basis = create_modal_basis(NMODES, NPIX_EXP, radial_offset=drg, angle_offset=dtg + offset_psg_exp)
+    basis_masked = [i * 1 for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psg_exp.append(basis_masked)
+
+    basis = create_modal_basis(NMODES, NPIX_EXP, radial_offset=dra, angle_offset=dta + offset_psa_exp)
+    basis_masked = [i * 1 for i in basis]
+    basis_masked = np.asarray(basis_masked)
+    basis_withrotations_psa_exp.append(basis_masked)
+
+basis_masked_psg = np.asarray(basis_withrotations_psg)
+basis_masked_psa = np.asarray(basis_withrotations_psa)
+basis_masked_psg_exp = np.asarray(basis_withrotations_psg_exp)
+basis_masked_psa_exp = np.asarray(basis_withrotations_psa_exp)
+
+basis_masked_psg = np.swapaxes(basis_masked_psg, 0, 1)
+basis_masked_psa = np.swapaxes(basis_masked_psa, 0, 1)
+basis_masked_psg_exp = np.swapaxes(basis_masked_psg_exp, 0, 1)
+basis_masked_psa_exp = np.swapaxes(basis_masked_psa_exp, 0, 1)
+
 # extract the retarder coeffs
-offset = 3
 psg_ret_coeffs = results.x[offset : offset + len(basis)]
 psg_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked_psg, psg_ret_coeffs)[0]
 
@@ -369,7 +407,9 @@ plt.legend()
 del psg_retarder_estimate, psa_retarder_estimate
 
 # create simulated power
-start_frames = forward_model(x0, basis_masked_psg, basis_masked_psa,
+start_frames = forward_model(x0,
+                        basis_masked_psg,
+                        basis_masked_psa,
                         psg_angles,
                         rotation_ratio=2.5,
                         dual_I=False,
