@@ -161,7 +161,7 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-offset = 3 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
+offset = 2 # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
 x0 = np.zeros(offset + 4*NMODES)
 
 # The input power term
@@ -346,7 +346,6 @@ plt.xlabel("Function Evaluations")
 print(results.x)
 
 # extract the retarder coeffs
-offset = 3
 psg_ret_coeffs = results.x[offset : offset + len(basis)]
 psg_retarder_estimate = sum_of_2d_modes_wrapper(basis_masked_psg, psg_ret_coeffs)[0]
 
@@ -428,7 +427,6 @@ COV = np.abs(np.linalg.inv(FIM))
 Parameters = [
     r"$I_0$",
     r"$\theta_{pol, g}$",
-    r"$\theta_{pol, a}$",
     r"$\delta_{ret, g}$",
     r"$\delta_{ret, a}$",
     r"$\theta_{ret, g}$",
