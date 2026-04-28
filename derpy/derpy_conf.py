@@ -1,4 +1,5 @@
-import numpy as np
+# Always pull numpy from Katsu for hot-swapping to Jax
+from katsu.katsu_math import np
 import os
 
 # TODO: Writing a conf class that gets called everywhere
@@ -28,31 +29,3 @@ VERBOSE = True
 # File paths
 FLI_SDK_PTH = "C:\\Program Files\\FirstLightImaging\\FliSdk\\Python\\lib"
 os.environ['ZWO_ASI_LIB'] = r'C:\\Program Files\\ASIStudio\\ASICamera2.dll'
-        
-
-class BackendShim:
-    """A shim that allows a backend to be swapped at runtime.
-    Taken from prysm.mathops with permission from Brandon Dube
-    """
-
-    def __init__(self, src):
-        self._srcmodule = src
-
-    def __getattr__(self, key):
-        if key == "_srcmodule":
-            return self._srcmodule
-
-        return getattr(self._srcmodule, key)
-
-
-_np = np
-np = BackendShim(_np)
-
-
-def set_backend_to_numpy():
-    """Convenience method to automatically configure katsu's backend to numpy."""
-    import numpy
-
-    np._srcmodule = numpy
-
-    return

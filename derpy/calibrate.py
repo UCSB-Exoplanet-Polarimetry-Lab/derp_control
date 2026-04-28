@@ -1,6 +1,5 @@
 import numpy as tnp
-import jax.numpy as jnp
-from jax import jit
+from jax import jit, vmap
 import ipdb
 from katsu.katsu_math import np, broadcast_kron
 from katsu.mueller import linear_retarder, linear_polarizer, linear_diattenuator
@@ -8,12 +7,12 @@ from katsu.polarimetry import drrp_data_reduction_matrix
 
 from prysm.coordinates import make_xy_grid, cart_to_polar
 from prysm.polynomials import noll_to_nm, sum_of_2d_modes
-# from .zernike import zernike_nm_seq
+from .polynomials import zernike_nm_seq
 # Handle different prysm naming
-try:
-    from prysm.polynomials import zernike_nm_seq
-except ImportError:
-    from prysm.polynomials import zernike_nm_sequence as zernike_nm_seq
+# try:
+#     from prysm.polynomials import zernike_nm_seq
+# except ImportError:
+#     from prysm.polynomials import zernike_nm_sequence as zernike_nm_seq
 
 def jax_sum_of_2d_modes(modes, weights):
     """a clone of prysm.polynomials sum_of_2d_modes that works when using
@@ -44,16 +43,7 @@ def sum_of_2d_modes_wrapper(modes, weights):
     if np._srcmodule == tnp:
         return sum_of_2d_modes(modes, weights)
     else:
-        # do some dimensional handling
-        if modes.ndim == 4:
-
-            # Need to re-shape array to make it tensordot friendly
-            modes = np.asarray(modes)
-            modes = np.swapaxes(modes, 0, 1)
-
-            return jax_sum_of_2d_modes(modes, weights)
-        else:
-            return jax_sum_of_2d_modes(modes, weights)
+        return jax_sum_of_2d_modes(modes, weights)
 
 
 def create_modal_basis(num_modes, num_pix, radial_offset=0, angle_offset=0):
@@ -98,6 +88,7 @@ def create_modal_basis(num_modes, num_pix, radial_offset=0, angle_offset=0):
     # build the polynomials
     # NOTE: num_modes is total number of modes, since we start the Zernike
     # index at 1, we add 1 to the end
+    # This may break with jax.numpy, might be worth pre-allocating
     nms = [noll_to_nm(i) for i in range(1, num_modes + 1)]
     basis = list(zernike_nm_seq(nms, r, t))
 
@@ -133,37 +124,52 @@ def psg_psa_states_broadcast(x0, basis_psg, basis_psa, psg_angles, rotation_rati
 
     # extract the front elements that contain the polarizer angles
     dc_power_term = x0[0]
-    psg_pol_angle = x0[1]
-    psa_pol_angle = x0[2] + psa_offset
+    psg_pol_angle = 0 #x0[1] # PSG-referenced
+    psa_pol_angle = x0[1] + psa_offset
 
-    npix = basis_psg[0].shape[0]
-    nmodes = basis_psg.shape[1]
+    # Zernike Polynomial offsets
+    # Generator
+    drg = x0[2]
+    dtg = x0[3]
+
+    # Analyzer
+    dra = x0[4]
+    dta = x0[5]
+
+    npix = basis_psg.shape[-1]
+    nmodes = basis_psg.shape[0]
 
     # Generate a new basis for each of the angular offsets
-    offset = 3
+    offset = 6
     psg_wvp_coeffs = x0[offset + 0 * nmodes : offset + 1 * nmodes]
     psa_wvp_coeffs = x0[offset + 1 * nmodes : offset + 2 * nmodes]
     psg_ang_coeffs = x0[offset + 2 * nmodes : offset + 3 * nmodes]
     psa_ang_coeffs = x0[offset + 3 * nmodes : offset + 4 * nmodes]
 
     # Re-generate the basis at each iteration - pre-allocate large arrays to store the basis
-    basis_withrotations_psa = [ Construct Calibration Basis
-    for offset_psg, offset_psa in zip(psg_angles, psa_angles):
+    basis_psg = np.zeros([len(psg_angles), nmodes, npix, npix])
+    basis_psa = np.zeros([len(psa_angles), nmodes, npix, npix])
 
-        # offset is in radians to be compatible with prysm angles
-        basis = create_modal_basis(nmodes, npix, radial_offset=drg, angle_offset=offset_psg + dtg)
-        basis_masked = np.asarray(basis)
-        basis_withrotations_psg.append(basis_masked)
+    # Construct Calibration Basis - this will be the first bit that _requires_ jax
+    basis_psg = vmap(lambda i: create_modal_basis(nmodes, npix, radial_offset=drg, angle_offset=i + dtg))(psg_angles)
+    basis_psa = vmap(lambda i: create_modal_basis(nmodes, npix, radial_offset=dra, angle_offset=i + dta))(psa_angles)
 
-        basis = create_modal_basis(nmodes, npix, radial_offset=dra, angle_offset=offset_psa + dta)
-        basis_masked = np.asarray(basis)
-        basis_withrotations_psa.append(basis_masked)
+    # ensure array
+    basis_psg = np.asarray(basis_psg)
+    basis_psa = np.asarray(basis_psa)
+
+    # for i, (offset_psg, offset_psa) in enumerate(zip(psg_angles, psa_angles)):
+
+    #     # offset is in radians to be compatible with prysm angles
+    #     basis = create_modal_basis(nmodes, npix, radial_offset=drg, angle_offset=offset_psg + dtg)
+    #     basis_masked = np.asarray(basis)
+    #     basis_psg = basis_psg.at[i].set(basis_masked)
+
+    #     basis = create_modal_basis(nmodes, npix, radial_offset=dra, angle_offset=offset_psa + dta)
+    #     basis_masked = np.asarray(basis)
+    #     basis_psa = basis_psa.at[i].set(basis_masked)
 
 
-    # Adding support for PSA diattenuation which DO NOT ROTATE
-    # psa_dia_coeffs = x0[offset + 4 * nmodes : offset + 5 * nmodes]
-    # psa_dia_coeffs_ret = x0[offset + 5 * nmodes : offset + 6 * nmodes]
-    # psa_dia_coeffs_ang = x0[offset + 6 * nmodes : offset + 7 * nmodes]
 
     # Good to make sure we are splitting the list correctly
     assert len(psg_wvp_coeffs) == nmodes
