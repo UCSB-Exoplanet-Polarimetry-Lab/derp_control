@@ -23,7 +23,7 @@ CAMERA_TEMP_READOUT_DELAY = 8 # s
 # Both VRRP and NRRP
 # Check `Device Manager` to see what USB port Zaber is using
 ZABER_PORT = "COM4"
-NRRP_ZABER_PORT = "COM3"
+ZABER_PORT_NRRP = "COM3"
 VERBOSE = True
 
 # File paths

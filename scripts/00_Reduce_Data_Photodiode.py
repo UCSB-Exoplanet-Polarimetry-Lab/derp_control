@@ -49,38 +49,33 @@ NMODES = 1
 TOL = 1e-40 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Let's try and load up Dan's data
-CAL_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251103_163635_UNCORRECTED.fits"
+CAL_DIR = Path.home() / "Data/Derpy/05-21-2026/Scalar_Vortex" \
+/ "calibration_data_2026-05-21_14-26-04.fits"
 
-DATA_DIR = Path.home() / "Data/dans_data" \
-/ "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
+DATA_DIR = Path.home() / "Data/Derpy/05-21-2026/Scalar_Vortex" \
+/ "measurement_data_2026-05-21_14-30-42.fits"
 
-# Our Recent VRRP measurements
-# CAL_DIR = Path.home() / "Data/Derpy/04-07-2026/allmyhomieshatenoise" \
-# / "calibration_data_2026-04-07_14-23-36.fits"
 
-# DATA_DIR = Path.home() / "Data/Derpy/04-07-2026/allmyhomieshatenoise" \
-# / "measurement_data_2026-04-07_13-51-51.fits"
 
 HANDEDNESS = 1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
 
 # Get the experiment dictionaries
 out = derp.load_fits_data(measurement_pth=CAL_DIR,
-                                  use_encoder=False,
-                                  centering_ref_img=0,
+                                  use_encoder=True,
+                                  centering_ref_img=10,
                                   use_photodiode=True,
-                                  label="Dan_1103",
+                                  label="Vortex_0521",
                                   mask_frames=None)
 
 out_exp = derp.load_fits_data(measurement_pth=DATA_DIR,
-                                  use_encoder=False,
+                                  use_encoder=True,
                                   centering_ref_img=0,
                                   use_photodiode=True,
-                                  label="Dan_1103")
+                                  label="Vortex_0521")
 
 
 # Reduce the data
-binsize = 12
+binsize = 4
 
 # make a mask
 before_bin_mask = np.zeros_like(out["images"][0])

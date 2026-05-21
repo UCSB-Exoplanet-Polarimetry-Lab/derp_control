@@ -8,7 +8,7 @@ import numpy as np
 from astropy.io import fits
 from tqdm import tqdm
 
-from derpy.camera import CRED2, display_all_temps
+from derpy.camera import OldCRED2, display_all_temps
 from derpy.derpy_conf import ZABER_PORT_NRRP
 
 # Set up derpy
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     DATA_PATH.mkdir(parents=True, exist_ok=True)
 
     # Init camera connection with default settings
-    cam = ZWOASI(tint=TINT, fps=FPS)
+    cam = OldCRED2(set_temperature=-40, tint=TINT, fps=FPS, conversion_gain="medium")
 
     # Take a dark
     _ = input("Turn off laser and press ENTER to take a dark image: ")
