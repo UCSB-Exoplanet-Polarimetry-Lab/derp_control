@@ -12,10 +12,10 @@ from warnings import warn
 
 try:
     from .motion import *
-except ImportError:
-    warn("Module pylablib not found. Will not be able to execute motion.py")
+except ImportError as e:
+    warn(f"{e} \n Module pylablib not found. Will not be able to execute motion.py")
 
 try:
     from .camera import *
-except ImportError:
-    warn("Module FliSdk_V2 not found. Will not be able to execute camera.CRED2")
+except ImportError as e:
+    warn(f"{e} \n Module FliSdk_V2 not found. Will not be able to execute camera.CRED2")

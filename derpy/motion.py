@@ -1,7 +1,9 @@
 from .derpy_conf import (
     FOCUS_STAGE_ID,
-    PSG_ROTATION_STAGE_ID,
-    PSA_ROTATION_STAGE_ID,
+    NRRP_PSG_ROTATION_STAGE_ID,
+    NRRP_PSA_ROTATION_STAGE_ID,
+    VRRP_PSG_ROTATION_STAGE_ID,
+    VRRP_PSA_ROTATION_STAGE_ID,
     np
 )
 
@@ -14,7 +16,7 @@ try:
     from zaber_motion import Units
     from zaber_motion.ascii import Connection
 except ImportError:
-    raise ImportError("zaber_motion not found. Make sure the library is installed and in your PYTHONPATH")
+    raise ImportError("zaber_motion not found. Make sure the library is installed `pip install zaber-motion`")
 
 
 def print_connected_devices():
