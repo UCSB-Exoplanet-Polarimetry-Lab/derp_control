@@ -11,7 +11,7 @@ import ipdb
 # Set up derpy
 from derpy.motion import BaseZaberStage, ZaberConnection
 from derpy.camera import CRED2, display_all_temps, ZWOASI
-from derpy.derpy_conf import ZABER_PORT_NRRP
+from derpy.derpy_conf import ZABER_PORT
 from derpy.photodiode_class import OPM
 
 
@@ -22,19 +22,19 @@ EXPERIMENT PARAMETERS DEFINED BY USER
 
 ANGULAR_STEP = 3.6  # degrees
 ANGULAR_RATIO = 2.5  # degrees
-N_CAL_MEASUREMENTS = 50
+N_CAL_MEASUREMENTS = 24
 N_MEASUREMENTS = 50
-DATA_PATH = Path.home() / "Data/Derpy/05-21-2026/Scalar_Vortex"
-TINT = 1.2 # milliseconds
+DATA_PATH = Path.home() / "Data/Derpy/01-13-2026/J_band_VVC"
+TINT = 50 # milliseconds
 FPS = 10
 SET_TEMPERATURE = None  # degrees Celsius
-WAVELENGTHS = [1480]  # nm
+WAVELENGTHS = [635]  # nm
 WVL_POWERS = [1.41]
 N_MEDIANS_DARK = 10
 N_MEDIANS = 10
 DARK_SUBTRACT = True # Subtract dark frames from images
 SAVE_PSG_IMGS = False # Save PSG images
-EXPERIMENT_NAME = "Scalar_Vortex"
+EXPERIMENT_NAME = "J_band_VVC_VRRP"
 """
 ---------------------------------
 """
