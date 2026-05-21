@@ -13,8 +13,8 @@ NRRP_PSG_ROTATION_STAGE_ID = 0
 NRRP_PSA_ROTATION_STAGE_ID = 1
 
 # VRRP - plugged in in reverse order from NRRP
-VRRP_PSG_ROTATION_STAGE_ID = 3
-VRRP_PSA_ROTATION_STAGE_ID = 2
+VRRP_PSG_ROTATION_STAGE_ID = 2
+VRRP_PSA_ROTATION_STAGE_ID = 3
 
 # CRED Camera config
 CRED2_CAMERA_INDEX = 0
@@ -23,6 +23,7 @@ CAMERA_TEMP_READOUT_DELAY = 8 # s
 # Both VRRP and NRRP
 # Check `Device Manager` to see what USB port Zaber is using
 ZABER_PORT = "COM4"
+NRRP_ZABER_PORT = "COM3"
 VERBOSE = True
 
 # File paths
