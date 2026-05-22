@@ -13,17 +13,10 @@ from .derpy_conf import (
     np,
 )
 
+import matplotlib.pyplot as plt
+import ipdb
 # from .photodiode_class import OPM
 
-# Make sure the First Light SDK is in
-try:
-    sys.path.append(FLI_SDK_PTH)
-    import FliSdk_V2 as sdk
-
-except ImportError:
-    warn(
-        f"FliSdk_V2 not found at {FLI_SDK_PTH}. \n Make sure the SDK is installed and in your PYTHONPATH."
-    )
 
 # Make sure the ZWOASI SDK is in
 try:
@@ -76,6 +69,8 @@ class BaseCamera:
             power_list = 0
 
         for i in range(num_frames):
+
+            # Frame is a bunch of zeros here nani
             frame = self._capture_raw_frame()
             frames.append(frame)
 
@@ -254,23 +249,33 @@ class CRED2(BaseCamera):
     ):
 
         super().__init__(fps=fps, tint=tint, bit_depth=2**14)
+        
+        # Make sure the First Light SDK is in
+        try:
+            sys.path.append(FLI_SDK_PTH)
+            import FliSdk_V2 as sdk
 
-        self.context = sdk.Init()
+        except ImportError:
+            warn(
+                f"FliSdk_V2 not found at {FLI_SDK_PTH}. \n Make sure the SDK is installed and in your PYTHONPATH."
+            )
+        self.sdk = sdk
+        self.context = self.sdk.Init()
         self.conversion_gain = conversion_gain
         self.temp_tolerance = temp_tolerance
         self.target_temperature = float(set_temperature)
 
         # detect & initialize hardware
-        self.grabbers = sdk.DetectGrabbers(self.context)
+        self.grabbers = self.sdk.DetectGrabbers(self.context)
         assert len(self.grabbers) > 0, "No grabbers found"
 
-        self.cameras = sdk.DetectCameras(self.context)
+        self.cameras = self.sdk.DetectCameras(self.context)
         assert len(self.cameras) > 0, "No cameras found"
 
         ok = sdk.SetCamera(self.context, self.cameras[CRED2_CAMERA_INDEX])
         assert ok, "Error setting camera"
 
-        update_context(self.context)
+        self.update_context()
 
         # set + wait for temperature
         self.set_temperature(set_temperature)
@@ -278,20 +283,49 @@ class CRED2(BaseCamera):
         # set fps, tint, gain via setters
         self.fps = fps
         self.tint = tint
+    
+    def update_context(self):
+        ok = self.sdk.Update(self.context)
+        self.sdk.Start(self.context)
+        if not ok:
+            print("Error while updating.")
+            exit()
+    
+    def display_all_temps(self, verbose=True):
+        res, mb, fe, pw, sensor, peltier, heatsink = self.sdk.FliCredTwo.GetAllTemp(self.context)
+        if res:
+            if verbose:
+                print("Sensor Temperature: " + str(sensor) + "C")
+                print("Motherboard Temperature: " + str(mb) + "C")
+                print("Frontend Temperature: " + str(fe) + "C")
+                print("Powerboard Temperature: " + str(pw) + "C")
+                print("Peltier Temperature: " + str(peltier) + "C")
+                print("Heatsink Temperature: " + str(heatsink) + "C")
+                print("***********************")
+        else:
+            print("Could not read temperature")
+
+        return sensor
 
     def _capture_raw_frame(self):
-        # TODO: Determine if this needs to be done at every image aquisition
-        sdk.Update(self.context)
-        sdk.Start(self.context)
-        frame = sdk.GetRawImageAsNumpyArray(self.context, 0)
+        # Update context - this appears necessary and I hate it so much
+        self.update_context()
+
+        # ipdb.set_trace()
+
+        # Get first image from updated context
+        # TODO: Use this function to override the take_many_images method
+        # and make use of the framegrabber's acquisition of a bunch of images
+        frame = self.sdk.GetRawImageAsNumpyArray(self.context, 0)
+        
         return frame.astype(np.float32)
 
     def close(self):
-        sdk.Stop(self.context)
-        sdk.Exit(self.context)
+        self.sdk.Stop(self.context)
+        self.sdk.Exit(self.context)
 
     def get_temperature(self):
-        res, mb, fe, pw, sensor, peltier, heatsink = sdk.FliCredTwo.GetAllTemp(
+        res, mb, fe, pw, sensor, peltier, heatsink = self.sdk.FliCredTwo.GetAllTemp(
             self.context
         )
         if not res:
@@ -299,28 +333,30 @@ class CRED2(BaseCamera):
         return sensor
 
     def set_temperature(self, target_temp):
-        sdk.FliCredTwo.SetSensorTemp(self.context, float(target_temp))
+        initial_temp = self.display_all_temps()
+        self.sdk.FliCredTwo.SetSensorTemp(self.context, float(target_temp))
         while True:
             sensor = self.get_temperature()
             if abs(sensor - target_temp) <= self.temp_tolerance:
                 break
             print(f"Cooling… Current {sensor:.2f}C Target {target_temp}")
             time.sleep(CAMERA_TEMP_READOUT_DELAY)
+        final_temp = self.display_all_temps()
         print(f"Temperature stabilized at {self.get_temperature():.2f}C")
 
     @BaseCamera.fps.setter
     def fps(self, value):
         self._fps = float(value)
-        if sdk.IsSerialCamera(self.context):
-            sdk.FliSerialCamera.SetFps(self.context, self._fps)
-        elif sdk.IsCblueSfnc(self.context):
-            sdk.FliCblueSfnc.SetAcquisitionFrameRate(self.context, self._fps)
+        if self.sdk.IsSerialCamera(self.context):
+            self.sdk.FliSerialCamera.SetFps(self.context, self._fps)
+        elif self.sdk.IsCblueSfnc(self.context):
+            self.sdk.FliCblueSfnc.SetAcquisitionFrameRate(self.context, self._fps)
 
     @BaseCamera.tint.setter
     def tint(self, value):
         self._tint = float(value)
-        sdk.FliCredTwo.SetTint(self.context, self._tint / 1000.0)
-        sdk.Update(self.context)
+        self.sdk.FliCredTwo.SetTint(self.context, self._tint / 1000.0)
+        self.sdk.Update(self.context)
 
 
 class OldCRED2:
@@ -507,7 +543,7 @@ class OldCRED2:
             OPM=OPM,
         )
         frame_list_median = np.median(frame_list, axis=0)
-
+        power_list_median = np.median(power_list, axis=0)
         if save_path is not None:
             hdu = fits.PrimaryHDU(frame_list_median)
             hdul = fits.HDUList([hdu])
@@ -515,7 +551,7 @@ class OldCRED2:
                 f"{save_path}_median", overwrite=True
             )  # overwrites original, non-median-combined image
 
-        return frame_list_median
+        return frame_list_median, power_list_median
 
     def take_mean_image(self, n_frames, save_path=None, verbose=False, OPM=None):
         frame_list, power_list = self.take_many_images(

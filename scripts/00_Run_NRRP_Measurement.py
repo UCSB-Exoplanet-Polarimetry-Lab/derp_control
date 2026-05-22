@@ -13,7 +13,7 @@ from derpy.derpy_conf import ZABER_PORT_NRRP
 
 # Set up derpy
 from derpy.motion import BaseZaberStage, ZaberConnection
-from derpy.photodiode_class import OPM
+from derpy.photodiode_class import OPM, VISA
 
 """
 EXPERIMENT PARAMETERS DEFINED BY USER
@@ -24,7 +24,7 @@ ANGULAR_STEP = 3.6  # degrees
 ANGULAR_RATIO = 4.98  # degrees
 N_CAL_MEASUREMENTS = 50
 N_MEASUREMENTS = 50
-DATA_PATH = Path.home() / "Data/Derpy/05-21-2026/Scalar_Vortex"
+DATA_PATH = Path.home() / "Data/Derpy/05-22-2026/Scalar_Vortex"
 TINT = 1.2  # milliseconds
 FPS = 10
 SET_TEMPERATURE = None  # degrees Celsius
@@ -46,11 +46,21 @@ if __name__ == "__main__":
     DATA_PATH.mkdir(parents=True, exist_ok=True)
 
     # Init camera connection with default settings
-    cam = OldCRED2(set_temperature=-40, tint=TINT, fps=FPS, conversion_gain="medium")
+    cam = CRED2(set_temperature=-40, tint=TINT, fps=FPS, conversion_gain="medium")
+    opm = OPM(VISA)
 
     # Take a dark
     _ = input("Turn off laser and press ENTER to take a dark image: ")
-    dark, dark_power = cam.take_median_image(N_MEDIANS_DARK)
+    imstack, powstack = [], []
+    cam.update_context()
+    cam.sdk.Start(cam.context)
+
+    for i in range(N_MEDIANS_DARK):
+        imstack.append(cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32))
+        powstack.append(OPM.get_reading)
+
+    dark = np.median(imstack, axis=0)
+    dark_power = np.median(powstack, axis=0)
 
     # Initialize the Zaber stage
     from derpy import (
@@ -100,8 +110,9 @@ if __name__ == "__main__":
             # Move the PSG stage
             if i != 0:
                 psg.step(ANGULAR_STEP)
-
-            if SAVE_PSG_IMGS:
+            
+            # CRED's fault not mine
+            if False:
                 imstack, _ = cam.take_many_images(N_MEDIANS)
 
                 if DARK_SUBTRACT:
@@ -120,9 +131,16 @@ if __name__ == "__main__":
             # Move the PSA stage
             if i != 0:
                 psa.step(ANGULAR_STEP * ANGULAR_RATIO)
+    
+            imstack, psa_power = [], []
+            cam.update_context()
+            cam.sdk.Start(cam.context)
 
-            imstack, psa_power = cam.take_many_images(N_MEDIANS)
+            for i in range(N_MEDIANS):
+                imstack.append(cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32))
+                psa_power.append(OPM.get_reading)
 
+            
             if DARK_SUBTRACT:
                 imstack_darksub = [im - dark for im in imstack]
             else:
