@@ -279,6 +279,14 @@ class CRED2(BaseCamera):
         self.fps = fps
         self.tint = tint
 
+    def _capture_raw_frame(self):
+        frame = sdk.GetRawImageAsNumpyArray(self.context, 0)
+        return frame.astype(np.float32)
+
+    def close(self):
+        sdk.Stop(self.context)
+        sdk.Exit(self.context)
+
     def get_temperature(self):
         res, mb, fe, pw, sensor, peltier, heatsink = sdk.FliCredTwo.GetAllTemp(
             self.context
@@ -310,14 +318,6 @@ class CRED2(BaseCamera):
         self._tint = float(value)
         sdk.FliCredTwo.SetTint(self.context, self._tint / 1000.0)
         sdk.Update(self.context)
-
-    def _capture_raw_frame(self):
-        frame = sdk.GetRawImageAsNumpyArray(self.context, 0)
-        return frame.astype(np.float32)
-
-    def close(self):
-        sdk.Stop(self.context)
-        sdk.Exit(self.context)
 
 
 class OldCRED2:
