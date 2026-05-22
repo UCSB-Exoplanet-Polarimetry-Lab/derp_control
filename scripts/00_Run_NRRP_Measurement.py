@@ -8,7 +8,7 @@ import numpy as np
 from astropy.io import fits
 from tqdm import tqdm
 
-from derpy.camera import OldCRED2, display_all_temps
+from derpy.camera import CRED2, display_all_temps
 from derpy.derpy_conf import ZABER_PORT_NRRP
 
 # Set up derpy
@@ -22,8 +22,8 @@ EXPERIMENT PARAMETERS DEFINED BY USER
 
 ANGULAR_STEP = 3.6  # degrees
 ANGULAR_RATIO = 4.98  # degrees
-N_CAL_MEASUREMENTS = 50
-N_MEASUREMENTS = 50
+N_CAL_MEASUREMENTS = 5
+N_MEASUREMENTS = 5
 DATA_PATH = Path.home() / "Data/Derpy/05-22-2026/Scalar_Vortex"
 TINT = 1.2  # milliseconds
 FPS = 10
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     for i in range(N_MEDIANS_DARK):
         imstack.append(cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32))
-        powstack.append(OPM.get_reading)
+        powstack.append(opm.get_reading())
 
     dark = np.median(imstack, axis=0)
     dark_power = np.median(powstack, axis=0)
@@ -138,8 +138,13 @@ if __name__ == "__main__":
 
             for i in range(N_MEDIANS):
                 imstack.append(cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32))
-                psa_power.append(OPM.get_reading)
-
+                psa_power.append(opm.get_reading())
+            
+            plt.figure()
+            plt.title("Last image in stack")
+            plt.imshow(imstack[-1])
+            plt.colorbar()
+            plt.show()
             
             if DARK_SUBTRACT:
                 imstack_darksub = [im - dark for im in imstack]
