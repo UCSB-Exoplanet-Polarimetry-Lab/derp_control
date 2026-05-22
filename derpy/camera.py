@@ -280,6 +280,9 @@ class CRED2(BaseCamera):
         self.tint = tint
 
     def _capture_raw_frame(self):
+        # TODO: Determine if this needs to be done at every image aquisition
+        sdk.Update(self.context)
+        sdk.Start(self.context)
         frame = sdk.GetRawImageAsNumpyArray(self.context, 0)
         return frame.astype(np.float32)
 
