@@ -56,7 +56,9 @@ if __name__ == "__main__":
     cam.sdk.Start(cam.context)
 
     for i in range(N_MEDIANS_DARK):
-        imstack.append(cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32))
+        imstack.append(
+            cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32)
+        )
         powstack.append(opm.get_reading())
 
     dark = np.median(imstack, axis=0)
@@ -110,7 +112,7 @@ if __name__ == "__main__":
             # Move the PSG stage
             if i != 0:
                 psg.step(ANGULAR_STEP)
-            
+
             # CRED's fault not mine
             if False:
                 imstack, _ = cam.take_many_images(N_MEDIANS)
@@ -131,21 +133,23 @@ if __name__ == "__main__":
             # Move the PSA stage
             if i != 0:
                 psa.step(ANGULAR_STEP * ANGULAR_RATIO)
-    
+
             imstack, psa_power = [], []
             cam.update_context()
             cam.sdk.Start(cam.context)
 
             for i in range(N_MEDIANS):
-                imstack.append(cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32))
+                imstack.append(
+                    cam.sdk.GetRawImageAsNumpyArray(cam.context, i).astype(np.float32)
+                )
                 psa_power.append(opm.get_reading())
-            
+
             plt.figure()
             plt.title("Last image in stack")
             plt.imshow(imstack[-1])
             plt.colorbar()
             plt.show()
-            
+
             if DARK_SUBTRACT:
                 imstack_darksub = [im - dark for im in imstack]
             else:
