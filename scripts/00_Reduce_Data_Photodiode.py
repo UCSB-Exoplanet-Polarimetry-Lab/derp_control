@@ -49,33 +49,33 @@ NMODES = 1
 TOL = 1e-40 # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Let's try and load up Dan's data
-CAL_DIR = Path.home() / "Data/Derpy/05-21-2026/Scalar_Vortex" \
-/ "calibration_data_2026-05-21_14-26-04.fits"
+CAL_DIR = Path.home() / "Data/Derpy/06-02-2026/Scalar_Vortex" \
+/ "calibration_1480nm_data_2026-06-02_16-02-39.fits"
 
-DATA_DIR = Path.home() / "Data/Derpy/05-21-2026/Scalar_Vortex" \
-/ "measurement_data_2026-05-21_14-30-42.fits"
+DATA_DIR = Path.home() / "Data/Derpy/06-02-2026/Scalar_Vortex" \
+/ "measurement_1480nm_data_2026-06-02_16-12-16.fits"
 
 
 
-HANDEDNESS = 1 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
+HANDEDNESS = 0 # set to -1 if the data is left-handed, 1 if right-handed, or 0 if unknown
 
 # Get the experiment dictionaries
 out = derp.load_fits_data(measurement_pth=CAL_DIR,
                                   use_encoder=True,
                                   centering_ref_img=10,
                                   use_photodiode=True,
-                                  label="Vortex_0521",
+                                  label="Vortex_0602_Calibration",
                                   mask_frames=None)
 
 out_exp = derp.load_fits_data(measurement_pth=DATA_DIR,
                                   use_encoder=True,
                                   centering_ref_img=0,
                                   use_photodiode=True,
-                                  label="Vortex_0521")
+                                  label="Vortex_0602_Science")
 
 
 # Reduce the data
-binsize = 4
+binsize = 1
 
 # make a mask
 before_bin_mask = np.zeros_like(out["images"][0])
@@ -585,9 +585,9 @@ ax.set_ylim(0, size)
 plt.tight_layout()
 plt.show()
 
-WAVELENGTH_SELECT = 595
+WAVELENGTH_SELECT = 1480
 
 hdu = fits.PrimaryHDU(M_meas)
 hdu.header["NMODES"] = (NMODES, "Number of Spatial Modes used to calibrate")
 hdu.header["WAVELENGTH"] = (WAVELENGTH_SELECT, "Measured Wavelength")
-hdu.writeto(f"spatial_cal_gpi_hwp_{NMODES}modes_1e-40ftol.fits", overwrite=True)
+hdu.writeto(f"spatial_cal_scalar_vortexH_{NMODES}modes_1e-40ftol.fits", overwrite=True)
