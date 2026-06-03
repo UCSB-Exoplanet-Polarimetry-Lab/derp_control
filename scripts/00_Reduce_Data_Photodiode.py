@@ -48,35 +48,37 @@ TOL = 1e-40  # adjusts both function and gradient tolerance, exits when EITHER a
 # Let's try and load up Dan's data
 CAL_DIR = (
     Path.home()
-    / "Data/dans_data"
-    / "Capture_DRRP_NewWindow_251117_152922_UNCORRECTED.fits"
+    / "C:/Users/Brewster/Data/Derpy/06-02-2026/Scalar_Vortex"
+    / "calibration_1480nm_data_2026-06-02_16-02-39.fits"
 )
 
 DATA_DIR = (
     Path.home()
-    / "Data/dans_data"
-    / "Capture_DRRP_NewWindow_251117_154842_UNCORRECTED.fits"
+    / "C:/Users/Brewster/Data/Derpy/06-02-2026/Scalar_Vortex"
+    / "measurement_1480nm_data_2026-06-02_16-12-16.fits"
 )
 
 # DANGER DO NOT SET TO ZERO OOOPSI
 HANDEDNESS = 1  # set to -1 if the data is left-handed, 1 if right-handed
-
+print(type(fits.open(CAL_DIR)["PSA_IMAGES"].data))
 # Get the experiment dictionaries
 out = derp.load_fits_data(
     measurement_pth=CAL_DIR,
     use_encoder=False,
-    centering_ref_img=10,
+    centering_ref_img=1,
     use_photodiode=True,
-    label="tmp",
+    label="vortex_0603_calibration",
     mask_frames=None,
 )
+print(type(out['images']))
+
 
 out_exp = derp.load_fits_data(
     measurement_pth=DATA_DIR,
     use_encoder=False,
     centering_ref_img=0,
     use_photodiode=True,
-    label="tmp",
+    label="vortex_0603_experiment",
 )
 
 
