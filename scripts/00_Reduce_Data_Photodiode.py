@@ -21,11 +21,12 @@ import derpy as derp
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import matplotlib.pyplot as plt
+import numpy as onp  # real numpy; `np` below is katsu's backend-switching array module
 from katsu.katsu_math import np, set_backend_to_jax
 from katsu.mueller import linear_retarder
 from matplotlib.animation import FuncAnimation
 from scipy.ndimage import shift
-from scipy.optimize import minimize
+from scipy.optimize import basinhopping, minimize
 
 # our spatial calibration stuff
 from derpy.calibrate import (
@@ -43,20 +44,39 @@ USER INPUTS
 CHANNEL = "Left"  # Right, Both
 
 NMODES = 1
-TOL = 1e-40  # adjusts both function and gradient tolerance, exits when EITHER are below this value
+TOL = 1e-3  # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
-# Let's try and load up Dan's data
+# Skyler Vortex Data 
 CAL_DIR = (
     Path.home()
-    / "C:/Users/Brewster/Data/Derpy/06-02-2026/Scalar_Vortex"
+    / "Data/Derpy/06-02-2026/Scalar_Vortex"
     / "calibration_1480nm_data_2026-06-02_16-02-39.fits"
 )
 
 DATA_DIR = (
     Path.home()
-    / "C:/Users/Brewster/Data/Derpy/06-02-2026/Scalar_Vortex"
+    / "Data/Derpy/06-02-2026/Scalar_Vortex"
     / "measurement_1480nm_data_2026-06-02_16-12-16.fits"
 )
+LABEL = "vortex_0603_calibration"
+LABEL_EXP = "vortex_0603_experiment"
+binsize = 3
+
+# Dan Spatial Data 
+# CAL_DIR = (
+#     Path.home()
+#     / "Data/dans_data"
+#     / "Capture_DRRP_TowerZO1_TowerZO2_260715_115131_UNCORRECTED.fits"
+# )
+# 
+# DATA_DIR = (
+#     Path.home()
+#     / "Data/dans_data"
+#     / "Capture_DRRP_TowerZO1_TowerZO2_260715_115131_UNCORRECTED.fits"
+# )
+# LABEL = "last_ddrp_set"
+# LABEL_EXP = "last_ddrp_set"
+
 
 # DANGER DO NOT SET TO ZERO OOOPSI
 HANDEDNESS = 1  # set to -1 if the data is left-handed, 1 if right-handed
@@ -67,10 +87,10 @@ out = derp.load_fits_data(
     use_encoder=False,
     centering_ref_img=1,
     use_photodiode=True,
-    label="vortex_0603_calibration",
+    label=LABEL,
     mask_frames=None,
 )
-print(type(out['images']))
+print(type(out["images"]))
 
 
 out_exp = derp.load_fits_data(
@@ -78,19 +98,17 @@ out_exp = derp.load_fits_data(
     use_encoder=False,
     centering_ref_img=0,
     use_photodiode=True,
-    label="vortex_0603_experiment",
+    label=LABEL_EXP,
 )
 
 
-# Reduce the data
-binsize = 12
 
 # make a mask
 before_bin_mask = np.zeros_like(out["images"][0])
 x = np.linspace(-1, 1, before_bin_mask.shape[0])
 x, y = np.meshgrid(x, x)
 r = np.hypot(x, y)
-before_bin_mask[r < 1.0] = 1
+before_bin_mask[r < 0.7] = 1
 
 reduced_cal, circle_params = derp.reduce_data(
     out, centering=None, bin=binsize, mask=before_bin_mask
@@ -132,7 +150,7 @@ def clean_frames(frames):
 
 
 # What if we normalize by the first frame to account for illumination
-true_frames = true_frames / true_frames[0]
+# true_frames = true_frames / true_frames[0]
 true_frames = clean_frames(true_frames)
 
 print(f"cal img shape = {reduced_cal.shape}")
@@ -163,7 +181,7 @@ exp_frames = np.moveaxis(exp_frames, 0, -1)
 
 # Init the starting guesses for calibrated values
 np.random.seed(32123)
-offset = 3  # DC power, polg angle, polaangle, xg, yg offset, xa, ya offset
+offset = 3  # DC power, polg angle, polaangle
 x0 = np.zeros(offset + 4 * NMODES)
 
 # The input power term
@@ -252,7 +270,18 @@ set_backend_to_jax()
 
 def MSE(I, D):
     squared_error = (I - D) ** 2
-    return np.nanmean(squared_error)
+
+    # Per-measurement 5/95 percentiles of D over the spatial axes.
+    # lo, hi have shape (Nmeasurement,), which broadcasts against D's last axis.
+    lo, hi = np.percentile(D, np.array([5, 95]), axis=(0, 1))
+
+    # Boolean mask the same shape as I/D (Npix x Npix x Nmeasurement):
+    # True where D is within its measurement's percentile range (non-outlier).
+    percentile_mask = (D >= lo) & (D <= hi)
+
+    filtered = squared_error[percentile_mask]
+
+    return np.nanmedian(filtered)
 
 
 plt.figure()
@@ -308,21 +337,86 @@ def callback_function(xk):
     funcvals.append(f)
 
 
-results = minimize(
+
+bounds = [(-np.pi, np.pi) for _ in range(len(x0))]
+bounds[0] = (0.25, 1e4)  # override the power bound
+bounds[offset] = (np.pi / 2.5, np.pi / 1.5)
+bounds[offset + 1 * NMODES] = (np.pi / 2.5, np.pi / 1.5)
+
+# Number of basin hops (random restarts). Each hop perturbs the current
+# solution then runs a full local L-BFGS-B minimization from there.
+NITER_BASINHOP = 5
+
+# Config for the local minimizer run at each basin hop. This is the same
+# L-BFGS-B setup previously passed directly to `minimize`.
+minimizer_kwargs = {
+    "method": "L-BFGS-B",
+    "jac": True,
+    "callback": callback_function,
+    "options": {"maxiter": 100_000, "ftol": TOL, "gtol": TOL, "maxfun": 100_000},
+    "bounds": bounds,
+}
+
+# Record every local minimum found across hops so we can see whether the
+# global search escapes the basin the plain minimize was stuck in.
+basin_minima = []
+
+
+def basin_callback(x, f, accept):
+    basin_minima.append(f)
+    print(f"[basinhopping] local min f={f:.6e}  accepted={accept}")
+
+
+# Per-parameter step scales so each coordinate is perturbed proportionally to
+# its own characteristic range instead of by a single global step size. The
+# pol angles, retardance coeffs, and angle coeffs all live near [-pi, pi]; the
+# input-power term (index 0) lives on a much larger, strictly-positive range,
+# so scale its step to its own magnitude rather than to pi.
+step_scales = onp.full(len(x0), onp.pi)
+step_scales[0] = max(1.0, abs(float(x0[0])))
+
+
+class ScaledStep:
+    """basinhopping take_step that displaces each parameter by a uniform random
+    amount proportional to its per-parameter scale. Exposes a `stepsize`
+    attribute so basinhopping's adaptive step-size tuning still applies (it
+    rescales all parameters together toward the target acceptance rate).
+    """
+
+    def __init__(self, scales, stepsize=0.5, seed=None):
+        self.scales = onp.asarray(scales, dtype=float)
+        self.stepsize = stepsize  # adapted by basinhopping toward target accept rate
+        self.rng = onp.random.default_rng(seed)
+
+    def __call__(self, x):
+        x = onp.asarray(x, dtype=float).copy()
+        x += self.rng.uniform(-1.0, 1.0, size=x.shape) * self.stepsize * self.scales
+        return x
+
+
+take_step = ScaledStep(step_scales, stepsize=0.5, seed=32123)
+
+
+results = basinhopping(
     loss_fg,
     x0=x0,
-    method="L-BFGS-B",
-    jac=True,
-    callback=callback_function,
-    options={"maxiter": 100_000, "ftol": TOL, "gtol": TOL, "maxfun": 100_000},
+    minimizer_kwargs=minimizer_kwargs,
+    niter=NITER_BASINHOP,
+    seed=32123,
+    disp=True,
+    callback=basin_callback,
+    take_step=take_step,
 )
 
 if pbar is not None:
     pbar.close()
 
+print(f"basinhopping best f = {results.fun:.6e} over {len(basin_minima)} local minima")
+
 plt.figure()
 plt.plot(funcvals, marker="o")
-plt.title(results.message)
+# basinhopping stores .message as a list of strings; minimize stores a plain str
+plt.title(results.message[0] if isinstance(results.message, (list, tuple)) else results.message)
 plt.yscale("log")
 plt.ylabel("Mean Squared Error")
 plt.xlabel("Function Evaluations")
