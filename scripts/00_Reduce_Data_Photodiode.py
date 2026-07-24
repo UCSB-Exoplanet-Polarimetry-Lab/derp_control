@@ -44,22 +44,21 @@ USER INPUTS
 CHANNEL = "Left"  # Right, Both
 
 NMODES = 1
-TOL = 1e-3  # adjusts both function and gradient tolerance, exits when EITHER are below this value
+TOL = 1e-8  # adjusts both function and gradient tolerance, exits when EITHER are below this value
 
 # Skyler Vortex Data 
 CAL_DIR = (
     Path.home()
-    / "Data/Derpy/06-02-2026/Scalar_Vortex"
-    / "calibration_1480nm_data_2026-06-02_16-02-39.fits"
+    / "Data/Derpy/07-20-2026"
+    / "calibration_data_2026-07-20_14-51-19.fits"
 )
-
 DATA_DIR = (
     Path.home()
-    / "Data/Derpy/06-02-2026/Scalar_Vortex"
-    / "measurement_1480nm_data_2026-06-02_16-12-16.fits"
+    / "Data/Derpy/07-20-2026/"
+    / "measurement_data_2026-07-20_14-55-52.fits"
 )
-LABEL = "vortex_0603_calibration"
-LABEL_EXP = "vortex_0603_experiment"
+LABEL = "vortex_0720_calibration"
+LABEL_EXP = "vortex_0720_experiment"
 binsize = 3
 
 # Dan Spatial Data 
@@ -150,7 +149,7 @@ def clean_frames(frames):
 
 
 # What if we normalize by the first frame to account for illumination
-# true_frames = true_frames / true_frames[0]
+true_frames = true_frames / true_frames[0]
 true_frames = clean_frames(true_frames)
 
 print(f"cal img shape = {reduced_cal.shape}")

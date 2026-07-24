@@ -973,9 +973,10 @@ def load_fits_data(measurement_pth,
             good_powers_total = np.median(measurement["PSA_POWER_METER"].data, axis=1)
         else:
             good_powers_total = measurement["PSA_POWER_METER"].data
-            if np.sum(good_powers_total) == 0:
-                warn("Photodiode power measurements are all zero. Check the 'PSA_POWER_METER' header and data in the FITS file. \n setting to ones...")
-                good_powers_total = np.ones_like(good_powers_total)
+
+        if np.nanmin(good_powers_total) <= 0 or np.nanmax(good_powers_total) <= 0:
+            warn("Photodiode power measurements are invalid/absent (non-positive values). Check the 'PSA_POWER_METER' header and data in the FITS file. \n setting to ones (no power normalization)...")
+            good_powers_total = np.ones_like(good_powers_total)
 
     if not use_encoder:
         psg_angles = measurement["PSG_COMMAND_ANGLES"]
