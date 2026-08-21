@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.fits
 *.json
+*.DS_Store
 
 # C extensions
 *.so
