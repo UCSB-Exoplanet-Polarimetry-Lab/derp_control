@@ -47,19 +47,20 @@ BINSIZE = 4
 
 # Get the experiment dictionaries
 out = derpy.load_fits_data(measurement_pth=CAL_DIR,
-                                  use_encoder=True,
+                                  use_encoder=False,
                                   centering_ref_img=0,
                                   use_photodiode=True,
                                   label="Dan_1103",
                                   mask_frames=None)
 
 out_exp = derpy.load_fits_data(measurement_pth=DATA_DIR,
-                                  use_encoder=True,
+                                  use_encoder=False,
                                   centering_ref_img=0,
                                   use_photodiode=True,
                                   label="Dan_1103")
 
 # Set up a data mask
+out["images"] = out["images"] / out["images"][0]
 before_bin_mask = np.zeros_like(out["images"][0])
 x, y = np.meshgrid(np.linspace(-1, 1, out['images'].shape[2]),
                    np.linspace(-1, 1, out['images'].shape[1]))
@@ -106,7 +107,7 @@ layers = [
 """
 # The calibration measurement is air (no sample), so the model is just the
 # four layers above. Power measured by the photodiode.
-power_measured = np.asarray(reduced_cal, dtype=np.float64)
+power_measured = np.asarray(out["images"], dtype=np.float64)
 power_measured = np.mean(power_measured, axis=(-1, -2))
 stokes_in = np.array([1., 0., 0., 0.])
 
