@@ -42,6 +42,12 @@ CAL_DIR = Path.home() / "Data/dans_data" \
 DATA_DIR = Path.home() / "Data/dans_data" \
 / "Capture_DRRP_Photodiode_251104_091851_UNCORRECTED.fits"
 
+CAL_DIR = Path.home() / "Data/Derpy/09-09-2026/NRRP_Air_Cal" \
+    / "calibration_data_2026-09-09_15-56-37.fits"
+
+DATA_DIR = Path.home() / "Data/Derpy/09-09-2026/NRRP_Air_Cal" \
+    / "measurement_data_2026-09-09_15-59-25.fits"
+
 # Define a bin-down
 BINSIZE = 4
 
@@ -50,14 +56,14 @@ out = derpy.load_fits_data(measurement_pth=CAL_DIR,
                                   use_encoder=False,
                                   centering_ref_img=0,
                                   use_photodiode=True,
-                                  label="Dan_1103",
+                                  label="nrrp_cal_0909",
                                   mask_frames=None)
 
 out_exp = derpy.load_fits_data(measurement_pth=DATA_DIR,
                                   use_encoder=False,
                                   centering_ref_img=0,
                                   use_photodiode=True,
-                                  label="Dan_1103")
+                                  label="nrrp_cal_0909")
 
 # Set up a data mask
 out["images"] = out["images"] / out["images"][0]
