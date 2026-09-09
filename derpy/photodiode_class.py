@@ -17,7 +17,7 @@ VISA = 'USB0::0x1313::0x8078::P0047814::INSTR'
 
 class OPM:
 
-    def __init__(self, VISA):
+    def __init__(self, VISA=VISA):
         self.OPM = Thorlabs.PM160(VISA)
 
 

@@ -64,6 +64,14 @@ class BaseCamera:
 
     def take_many_images(self, num_frames, save_path=None, verbose=False, OPM=None):
 
+        # CRED2 specific context update, this is sort of weird because
+        # it's a subclass of BaseCamera, but we need to update the context before taking images
+        # and having the method overridden in the subclass would be more complicated than just checking
+        # the instance type here
+        if isinstance(self, CRED2):    
+            sdk.Update(self.context)
+            sdk.Start(self.context)
+
         frames = []
 
         if OPM is not None:
